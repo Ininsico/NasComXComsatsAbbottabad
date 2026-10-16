@@ -116,6 +116,53 @@ export function depositAddress({ coin, network }) {
   return signedGet('/sapi/v1/capital/deposit/address', { coin, network });
 }
 
+/** Read-only: cross-margin balances (net of borrowing). */
+export function marginAccount() {
+  return signedGet('/sapi/v1/margin/account');
+}
+
+/** Read-only: USDT-M futures wallet balances — futures live on the fapi host. */
+export async function futuresBalance() {
+  if (!config.binance.configured) {
+    throw new Error('Binance is not configured');
+  }
+
+  const query = new URLSearchParams({
+    recvWindow: '5000',
+    timestamp: String(Date.now()),
+  }).toString();
+
+  let response;
+
+  try {
+    response = await fetch(`${config.binance.futuresUrl}/fapi/v2/balance?${query}&signature=${sign(query)}`, {
+      headers: { 'X-MBX-APIKEY': config.binance.apiKey },
+    });
+  } catch {
+    throw new Error('Binance futures is unreachable from this server');
+  }
+
+  const payload = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    const error = new Error(payload?.msg ?? `Binance futures replied with status ${response.status}`);
+    error.binanceCode = payload?.code ?? null;
+    throw error;
+  }
+
+  return payload;
+}
+
+/** Read-only: Simple Earn flexible holdings. */
+export function earnFlexiblePositions() {
+  return signedGet('/sapi/v1/simple-earn/flexible/position', { size: '100' });
+}
+
+/** Read-only: Simple Earn locked holdings. */
+export function earnLockedPositions() {
+  return signedGet('/sapi/v1/simple-earn/locked/position', { size: '100' });
+}
+
 /** Read-only public price feed, used to value the portfolio in USDT. */
 export async function tickerPrices() {
   const response = await fetch(`${config.binance.baseUrl}/api/v3/ticker/price`);

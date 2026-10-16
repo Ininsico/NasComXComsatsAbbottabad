@@ -5,6 +5,15 @@ const toInt = (value, fallback) => {
   return Number.isFinite(parsed) ? parsed : fallback;
 };
 
+const stripSlash = (value) => value.replace(/\/+$/, '');
+
+const binanceBaseUrl = stripSlash(process.env.BINANCE_BASE_URL ?? 'https://api.binance.com');
+
+/** Futures live on a different host (fapi instead of api), derived unless overridden. */
+const binanceFuturesUrl = stripSlash(
+  process.env.BINANCE_FUTURES_URL ?? binanceBaseUrl.replace('//api.', '//fapi.'),
+);
+
 export const config = {
   env: process.env.NODE_ENV ?? 'development',
   port: toInt(process.env.PORT, 4000),
@@ -29,7 +38,8 @@ export const config = {
     endpoint: 'https://api.groq.com/openai/v1/chat/completions',
   },
   binance: {
-    baseUrl: (process.env.BINANCE_BASE_URL ?? 'https://api.binance.com').replace(/\/+$/, ''),
+    baseUrl: binanceBaseUrl,
+    futuresUrl: binanceFuturesUrl,
     apiKey: process.env.BINANCE_API_KEY ?? '',
     apiSecret: process.env.BINANCE_API_SECRET ?? '',
     coin: process.env.BINANCE_DEPOSIT_COIN ?? 'USDT',

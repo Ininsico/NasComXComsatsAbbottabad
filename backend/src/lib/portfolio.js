@@ -1,6 +1,15 @@
 import { config } from '../config.js';
 import { CREDITED_STATUSES } from '../data/plans.js';
-import { accountBalances, depositHistory, fundingWallet, tickerPrices } from './binance.js';
+import {
+  accountBalances,
+  depositHistory,
+  earnFlexiblePositions,
+  earnLockedPositions,
+  fundingWallet,
+  futuresBalance,
+  marginAccount,
+  tickerPrices,
+} from './binance.js';
 import { listIntents } from './payments.js';
 
 const STABLECOINS = new Set(['USDT', 'USDC', 'BUSD', 'FDUSD', 'DAI', 'TUSD']);
@@ -9,6 +18,76 @@ const round = (value, digits = 2) => {
   const factor = 10 ** digits;
   return Math.round(value * factor) / factor;
 };
+
+/**
+ * Every wallet this key can hold funds in. Each reader yields plain
+ * `{ asset, free, locked }` rows; a reader that fails is reported as unreadable
+ * rather than being silently counted as zero.
+ */
+function walletReaders(spotAccount) {
+  return [
+    {
+      id: 'spot',
+      label: 'Spot',
+      read: async () => {
+        if (!spotAccount) throw new Error('Spot balances could not be read');
+        return spotAccount.balances.map((balance) => ({
+          asset: balance.asset,
+          free: Number(balance.free),
+          locked: Number(balance.locked),
+        }));
+      },
+    },
+    {
+      id: 'funding',
+      label: 'Funding',
+      read: async () =>
+        (await fundingWallet()).map((asset) => ({
+          asset: asset.asset,
+          free:
+            Number(asset.free ?? 0) + Number(asset.freeze ?? 0) + Number(asset.withdrawing ?? 0),
+          locked: Number(asset.locked ?? 0),
+        })),
+    },
+    {
+      id: 'margin',
+      label: 'Cross Margin',
+      read: async () =>
+        (await marginAccount()).userAssets.map((asset) => ({
+          // netAsset is free + locked − borrowed − interest, so debt lowers the total.
+          asset: asset.asset,
+          free: Number(asset.netAsset ?? 0),
+          locked: 0,
+        })),
+    },
+    {
+      id: 'futures',
+      label: 'USDT-M Futures',
+      read: async () =>
+        (await futuresBalance()).map((balance) => ({
+          asset: balance.asset,
+          free: Number(balance.balance ?? 0),
+          locked: 0,
+        })),
+    },
+    {
+      id: 'earn',
+      label: 'Simple Earn',
+      read: async () => {
+        const [flexible, locked] = await Promise.all([
+          earnFlexiblePositions().catch(() => ({ rows: [] })),
+          earnLockedPositions().catch(() => ({ rows: [] })),
+        ]);
+
+        return [...(flexible?.rows ?? []), ...(locked?.rows ?? [])].map((position) => ({
+          asset: position.asset,
+          free: Number(position.totalAmount ?? position.amount ?? 0),
+          locked: 0,
+        }));
+      },
+    },
+  ];
+}
 
 /** Total value of the subscription side of the ledger. */
 export async function subscriptionTotals() {
@@ -36,9 +115,8 @@ export async function subscriptionTotals() {
 }
 
 /**
- * The whole portfolio: wallet holdings valued in USDT, everything ever deposited,
- * and what the subscriptions have brought in. Never throws — the admin console
- * shows an unavailable state instead of failing outright.
+ * Whole-account portfolio: every wallet Binance exposes for this key, marked to
+ * market in USDT. Never throws — unreadable wallets are listed with the reason.
  */
 export async function loadPortfolio() {
   const subscriptions = await subscriptionTotals();
@@ -47,89 +125,111 @@ export async function loadPortfolio() {
     return { available: false, reason: 'Binance is not configured', subscriptions };
   }
 
-  try {
-    const [account, funding, deposits, prices] = await Promise.all([
-      accountBalances(),
-      fundingWallet().catch(() => []),
-      depositHistory({ coin: config.binance.coin, limit: 100 }),
-      tickerPrices().catch(() => []),
-    ]);
+  const [spotAccount, prices] = await Promise.all([
+    accountBalances().catch(() => null),
+    tickerPrices().catch(() => []),
+  ]);
 
-    const priceBySymbol = new Map(
-      (Array.isArray(prices) ? prices : []).map((entry) => [entry.symbol, Number(entry.price)]),
-    );
+  const priceBySymbol = new Map(
+    (Array.isArray(prices) ? prices : []).map((entry) => [entry.symbol, Number(entry.price)]),
+  );
 
-    const priceFor = (asset) => {
-      if (STABLECOINS.has(asset)) return 1;
-      const price = priceBySymbol.get(`${asset}USDT`);
-      return Number.isFinite(price) ? price : null;
-    };
+  const priceFor = (asset) => {
+    if (STABLECOINS.has(asset)) return 1;
+    const price = priceBySymbol.get(`${asset}USDT`);
+    return Number.isFinite(price) ? price : null;
+  };
 
-    const toHolding = (asset, free, locked, wallet) => ({
-      asset,
-      wallet,
-      free,
-      locked,
-      total: free + locked,
-      price: priceFor(asset),
-      value: priceFor(asset) === null ? null : round((free + locked) * priceFor(asset)),
+  const readers = walletReaders(spotAccount);
+  const settled = await Promise.allSettled(readers.map((wallet) => wallet.read()));
+
+  const wallets = [];
+  const holdings = [];
+  const unreadable = [];
+  const byWallet = {};
+
+  settled.forEach((outcome, index) => {
+    const wallet = readers[index];
+
+    if (outcome.status === 'rejected') {
+      const reason = outcome.reason?.message ?? 'Could not be read';
+      wallets.push({ id: wallet.id, label: wallet.label, status: 'error', error: reason, value: 0, count: 0 });
+      unreadable.push({ id: wallet.id, label: wallet.label, error: reason });
+      return;
+    }
+
+    const rows = (outcome.value ?? []).filter((row) => Number(row.free) + Number(row.locked) !== 0);
+    let value = 0;
+
+    for (const row of rows) {
+      const total = Number(row.free) + Number(row.locked);
+      const price = priceFor(row.asset);
+      const rowValue = price === null ? null : round(total * price);
+
+      if (rowValue !== null) value += rowValue;
+
+      holdings.push({
+        asset: row.asset,
+        wallet: wallet.id,
+        walletLabel: wallet.label,
+        free: round(row.free, 8),
+        locked: round(row.locked, 8),
+        total: round(total, 8),
+        price,
+        value: rowValue,
+      });
+    }
+
+    byWallet[wallet.id] = round(value);
+    wallets.push({
+      id: wallet.id,
+      label: wallet.label,
+      status: 'ok',
+      value: round(value),
+      count: rows.length,
     });
+  });
 
-    const spotHoldings = account.balances
-      .map((balance) => toHolding(balance.asset, Number(balance.free), Number(balance.locked), 'spot'))
-      .filter((holding) => holding.total > 0);
+  holdings.sort((a, b) => (b.value ?? 0) - (a.value ?? 0));
 
-    const fundingHoldings = (Array.isArray(funding) ? funding : [])
-      .map((asset) => {
-        const free = Number(asset.free ?? 0) + Number(asset.freeze ?? 0) + Number(asset.withdrawing ?? 0);
-        return toHolding(asset.asset, free, Number(asset.locked ?? 0), 'funding');
-      })
-      .filter((holding) => holding.total > 0);
+  const deposits = await depositHistory({ coin: config.binance.coin, limit: 100 }).catch(() => []);
+  const depositList = (Array.isArray(deposits) ? deposits : []).filter((deposit) =>
+    CREDITED_STATUSES.has(Number(deposit.status)),
+  );
 
-    const holdings = [...spotHoldings, ...fundingHoldings].sort(
-      (a, b) => (b.value ?? 0) - (a.value ?? 0),
-    );
-
-    const depositList = (Array.isArray(deposits) ? deposits : []).filter((deposit) =>
-      CREDITED_STATUSES.has(Number(deposit.status)),
-    );
-
-    const valueOf = (list) => list.reduce((total, holding) => total + (holding.value ?? 0), 0);
-    const spotValue = valueOf(spotHoldings);
-    const fundingValue = valueOf(fundingHoldings);
-
-    return {
-      available: true,
-      generatedAt: new Date().toISOString(),
-      asset: config.binance.coin,
-      network: config.binance.network,
-      permissions: {
-        canTrade: account.canTrade,
-        canWithdraw: account.canWithdraw,
-        canDeposit: account.canDeposit,
-      },
-      totals: {
-        walletValue: round(spotValue + fundingValue),
-        spotValue: round(spotValue),
-        fundingValue: round(fundingValue),
-        depositsReceived: round(
-          depositList.reduce((total, deposit) => total + Number(deposit.amount), 0),
-        ),
-        subscriptionRevenue: subscriptions.revenue,
-      },
-      holdings,
-      unpriced: holdings.filter((holding) => holding.value === null).map((holding) => holding.asset),
-      depositCount: depositList.length,
-      deposits: depositList.slice(0, 10).map((deposit) => ({
-        txId: deposit.txId,
-        amount: Number(deposit.amount),
-        coin: deposit.coin,
-        network: deposit.network,
-        insertTime: Number(deposit.insertTime),
-      })),
-      subscriptions,
-    };
-  } catch (error) {
-    return { available: false, reason: error.message, subscriptions };
-  }
+  return {
+    available: true,
+    scope: 'global',
+    generatedAt: new Date().toISOString(),
+    asset: config.binance.coin,
+    network: config.binance.network,
+    permissions: spotAccount
+      ? {
+          canTrade: spotAccount.canTrade,
+          canWithdraw: spotAccount.canWithdraw,
+          canDeposit: spotAccount.canDeposit,
+        }
+      : null,
+    totals: {
+      totalValue: round(Object.values(byWallet).reduce((total, value) => total + value, 0)),
+      byWallet,
+      depositsReceived: round(
+        depositList.reduce((total, deposit) => total + Number(deposit.amount), 0),
+      ),
+      subscriptionRevenue: subscriptions.revenue,
+    },
+    wallets,
+    unreadable,
+    holdings,
+    unpriced: [...new Set(holdings.filter((h) => h.value === null).map((h) => h.asset))],
+    depositCount: depositList.length,
+    deposits: depositList.slice(0, 10).map((deposit) => ({
+      txId: deposit.txId,
+      amount: Number(deposit.amount),
+      coin: deposit.coin,
+      network: deposit.network,
+      insertTime: Number(deposit.insertTime),
+    })),
+    subscriptions,
+  };
 }

@@ -89,7 +89,12 @@ function Portfolio({ portfolio }) {
 
   return (
     <>
-      {portfolio.permissions.canWithdraw || portfolio.permissions.canTrade ? (
+      {portfolio.permissions === null ? (
+        <p className="alert alert--pending" style={{ marginBottom: '1rem' }}>
+          <ShieldCheck size={15} aria-hidden="true" />
+          The key&apos;s permissions could not be read, so the read-only guarantee is unconfirmed.
+        </p>
+      ) : portfolio.permissions.canWithdraw || portfolio.permissions.canTrade ? (
         <p className="alert alert--error" style={{ marginBottom: '1rem' }}>
           <ShieldCheck size={15} aria-hidden="true" />
           This API key can trade and withdraw. The portal only ever reads from Binance, but restrict
@@ -106,8 +111,8 @@ function Portfolio({ portfolio }) {
         <Tile
           icon={Briefcase}
           label="Total portfolio"
-          value={usdt(totals.walletValue)}
-          tone={totals.walletValue > 0 ? 'emerald' : 'amber'}
+          value={usdt(totals.totalValue)}
+          tone={totals.totalValue > 0 ? 'emerald' : 'amber'}
         />
         <Tile icon={Bitcoin} label="Deposits received" value={usdt(totals.depositsReceived)} />
         <Tile icon={CreditCard} label="Subscription revenue" value={usdt(totals.subscriptionRevenue)} />
@@ -122,8 +127,56 @@ function Portfolio({ portfolio }) {
       <div className="table-wrap" style={{ marginTop: '1rem' }}>
         <table className="table">
           <caption>
-            Spot {usdt(totals.spotValue)} + Funding {usdt(totals.fundingValue)} · marked to market
-            with the Binance ticker
+            Account scope · every wallet this key can read, valued live in {portfolio.asset}
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col">Wallet</th>
+              <th scope="col">Holdings</th>
+              <th scope="col">Value ({portfolio.asset})</th>
+              <th scope="col">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {portfolio.wallets.map((wallet) => (
+              <tr key={wallet.id}>
+                <th scope="row">{wallet.label}</th>
+                <td>{wallet.count}</td>
+                <td>{wallet.value.toFixed(2)}</td>
+                <td>
+                  <span
+                    className={`pill ${wallet.status === 'ok' ? 'pill--done' : 'pill--problem'}`}
+                  >
+                    {wallet.status === 'ok' ? 'Readable' : 'Unavailable'}
+                  </span>
+                </td>
+              </tr>
+            ))}
+            <tr>
+              <th scope="row">Total across all wallets</th>
+              <td colSpan={2} />
+              <td>
+                <span className="pill pill--done">{usdt(totals.totalValue)}</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      {portfolio.unreadable.length > 0 ? (
+        <ul className="hint" style={{ margin: '0.5rem 0 0', paddingLeft: '1.15rem' }}>
+          {portfolio.unreadable.map((wallet) => (
+            <li key={wallet.id}>
+              {wallet.label}: {wallet.error}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
+      <div className="table-wrap" style={{ marginTop: '1.25rem' }}>
+        <table className="table">
+          <caption>
+            {portfolio.holdings.length} holding(s) with a non-zero balance across readable wallets
           </caption>
           <thead>
             <tr>
@@ -139,7 +192,7 @@ function Portfolio({ portfolio }) {
             {portfolio.holdings.length === 0 ? (
               <tr>
                 <td colSpan={6} className="muted">
-                  No funds in the spot or funding wallet yet — the portfolio is {usdt(0)}.
+                  No funds in any wallet yet — the portfolio is {usdt(0)}.
                 </td>
               </tr>
             ) : (
@@ -147,7 +200,7 @@ function Portfolio({ portfolio }) {
                 <tr key={`${holding.wallet}-${holding.asset}`}>
                   <th scope="row">{holding.asset}</th>
                   <td>
-                    <span className="pill pill--neutral">{holding.wallet}</span>
+                    <span className="pill pill--neutral">{holding.walletLabel}</span>
                   </td>
                   <td>{holding.free}</td>
                   <td>{holding.locked}</td>
@@ -156,13 +209,6 @@ function Portfolio({ portfolio }) {
                 </tr>
               ))
             )}
-            <tr>
-              <th scope="row">Total portfolio value</th>
-              <td colSpan={4} />
-              <td>
-                <span className="pill pill--done">{usdt(totals.walletValue)}</span>
-              </td>
-            </tr>
           </tbody>
         </table>
       </div>

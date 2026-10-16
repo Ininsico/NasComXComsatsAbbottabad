@@ -109,11 +109,6 @@ export default function Sidebar({ collapsed, onToggleCollapse, open, onNavigate 
             ))}
           </>
         ) : null}
-
-        <p className="sidebar__section">Session</p>
-        <p className="sidebar__note">
-          The public website is closed while you are signed in. Log out to browse it again.
-        </p>
       </nav>
 
       <div className="sidebar__foot">
