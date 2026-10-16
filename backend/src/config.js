@@ -49,7 +49,11 @@ export const config = {
   },
   groq: {
     apiKey: process.env.GROQ_API_KEY ?? '',
-    model: process.env.GROQ_MODEL ?? 'llama-3.3-70b-versatile',
+    model: process.env.GROQ_MODEL ?? 'openai/gpt-oss-20b',
+    fastModel: process.env.GROQ_FAST_MODEL ?? process.env.GROQ_MODEL ?? 'openai/gpt-oss-20b',
+    // gpt-oss models reason before answering; "low" removes most of that latency.
+    reasoningEffort: process.env.GROQ_REASONING_EFFORT ?? 'low',
+    maxTokens: toInt(process.env.GROQ_MAX_TOKENS, 320),
     endpoint: 'https://api.groq.com/openai/v1/chat/completions',
   },
   binance: {

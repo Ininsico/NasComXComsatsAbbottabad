@@ -57,6 +57,12 @@ export function createChromaStore({
     const created = await active.getOrCreateCollection({
       name,
       metadata: { namespace, 'hnsw:space': 'cosine' },
+      // Embeddings are always supplied explicitly, but the client still wants a
+      // function to build the collection with — otherwise it reaches for the
+      // optional @chroma-core/default-embed and complains when it is absent.
+      embeddingFunction: {
+        generate: (texts) => embedder.embedBatch([...texts]),
+      },
     });
 
     collections.set(name, created);

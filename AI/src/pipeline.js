@@ -48,23 +48,29 @@ export function createRagPipeline({ store = createVectorStore(), generation } = 
   /**
    * Retrieve, then answer. `sources` is returned separately so a caller can show
    * what the answer was grounded in (or cite it in a WhatsApp reply).
+   *
+   * `generation` overrides the default generator settings for one call, which is
+   * how the chat path asks for a smaller, faster model.
    */
-  async function answer({ userId, question, topK = 4, includeShared = true, minScore = 0.05, system }) {
+  async function answer({ userId, question, topK = 4, includeShared = true, minScore = 0.05, system, generation }) {
     const retrieved = await search({ userId, question, topK, includeShared, minScore });
 
     const context = retrieved
       .map((hit, index) => `[${index + 1}] (${hit.sourceTitle}) ${hit.text}`)
       .join('\n\n');
 
+    const settings = { ...generator, ...(generation ?? {}) };
+
     const result = await generateAnswer({
-      apiKey: generator.apiKey,
-      model: generator.model,
-      endpoint: generator.endpoint,
-      system: system ?? generator.system ?? DEFAULT_SYSTEM_PROMPT,
+      apiKey: settings.apiKey,
+      model: settings.model,
+      endpoint: settings.endpoint,
+      system: system ?? settings.system ?? DEFAULT_SYSTEM_PROMPT,
       question,
       context,
-      maxTokens: generator.maxTokens,
-      temperature: generator.temperature,
+      maxTokens: settings.maxTokens,
+      temperature: settings.temperature,
+      reasoningEffort: settings.reasoningEffort,
     });
 
     return {

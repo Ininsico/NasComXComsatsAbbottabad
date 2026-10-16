@@ -1,12 +1,17 @@
 /**
- * Answer synthesis. Kept transport-only: the caller supplies the key, model and
- * endpoint, so this module has no configuration dependency of its own.
+ * Answer synthesis. Kept transport-only: the caller supplies the key, model,
+ * endpoint and any latency knobs, so this module has no configuration of its own.
  */
 
-export const DEFAULT_SYSTEM_PROMPT = `You are the campus assistant for COMSATS Abbottabad.
-Answer the question using the retrieved context below and nothing else.
-If the context does not contain the answer, say so plainly and suggest contacting the administration office.
-Be concise: at most four short sentences, or a short list.`;
+export const DEFAULT_SYSTEM_PROMPT = `You are the friendly assistant for COMSATS Abbottabad, replying in a chat.
+Keep replies short: one to three sentences, or a short list. Plain text only — no markdown headings or tables.
+
+Campus notes may be provided below. Use them like this:
+- If they answer the question, answer from them and stay faithful to them.
+- If they are unrelated to the question, ignore them completely.
+- If the question is not about the campus at all — general knowledge, arithmetic, definitions, small talk, anything else — just answer it normally and helpfully from your own knowledge.
+
+Never reply that you cannot answer, and never tell someone to contact an office unless the question is specifically about campus business and no note covers it. Even then, share whatever you do know first, then offer the office as a follow-up.`;
 
 export async function generateAnswer({
   apiKey,
@@ -15,8 +20,9 @@ export async function generateAnswer({
   system = DEFAULT_SYSTEM_PROMPT,
   question,
   context,
-  maxTokens = 600,
-  temperature = 0.2,
+  maxTokens = 400,
+  temperature = 0.3,
+  reasoningEffort,
 }) {
   if (!apiKey) throw new Error('No generation API key was provided');
   if (!question) throw new Error('A question is required');
@@ -25,11 +31,16 @@ export async function generateAnswer({
     {
       role: 'system',
       content: context
-        ? `${system}\n\nRetrieved context:\n${context}`
-        : `${system}\n\nNo context was retrieved for this question.`,
+        ? `${system}\n\nCampus notes (possibly relevant — ignore them if they are not):\n${context}`
+        : `${system}\n\nNo campus notes matched this question, so answer it from your own knowledge.`,
     },
     { role: 'user', content: question },
   ];
+
+  const body = { model, messages, max_tokens: maxTokens, temperature };
+
+  // gpt-oss models are reasoning models; "low" cuts a lot of latency for chat.
+  if (reasoningEffort) body.reasoning_effort = reasoningEffort;
 
   let response;
 
@@ -40,7 +51,7 @@ export async function generateAnswer({
         'Content-Type': 'application/json',
         Authorization: `Bearer ${apiKey}`,
       },
-      body: JSON.stringify({ model, messages, max_tokens: maxTokens, temperature }),
+      body: JSON.stringify(body),
     });
   } catch {
     throw new Error('The generation service is unreachable');

@@ -28,10 +28,23 @@ const pipeline = createRagPipeline({
     apiKey: config.groq.apiKey,
     model: config.groq.model,
     endpoint: config.groq.endpoint,
-    maxTokens: 600,
-    temperature: 0.2,
+    maxTokens: config.groq.maxTokens,
+    temperature: 0.3,
+    reasoningEffort: config.groq.reasoningEffort,
   },
 });
+
+/**
+ * Chat-shaped generation: the smaller model, the least reasoning, and a short
+ * reply budget. A WhatsApp reply does not need paragraph-length prose, and every
+ * extra token is latency the sender can feel.
+ */
+export const CHAT_GENERATION = {
+  model: config.groq.fastModel,
+  reasoningEffort: 'low',
+  maxTokens: 220,
+  temperature: 0.4,
+};
 
 export { SHARED_NAMESPACE, store };
 export default pipeline;
