@@ -1,5 +1,8 @@
 const BASE_URL = (import.meta.env.VITE_API_URL ?? 'http://localhost:4000').replace(/\/+$/, '');
 
+/** The API this browser is actually talking to — surfaced in the UI for debugging. */
+export const API_BASE_URL = BASE_URL;
+
 export class ApiError extends Error {
   constructor(message, status, fields) {
     super(message);
@@ -39,6 +42,7 @@ async function request(path, { method = 'GET', body, token } = {}) {
 }
 
 export const api = {
+  health: () => request('/api/health'),
   signup: (details) => request('/api/auth/signup', { method: 'POST', body: details }),
   login: (credentials) => request('/api/auth/login', { method: 'POST', body: credentials }),
   me: (token) => request('/api/auth/me', { token }),

@@ -1,6 +1,7 @@
 import cors from 'cors';
 import express from 'express';
 import { config } from './config.js';
+import { countDemoAccounts, DEMO_ACCOUNT_COUNT } from './lib/seed.js';
 import accountRoutes from './routes/account.js';
 import authRoutes from './routes/auth.js';
 import campusRoutes from './routes/campus.js';
@@ -21,8 +22,13 @@ export function createApp() {
   );
   app.use(express.json({ limit: '100kb' }));
 
-  app.get('/api/health', (req, res) => {
-    res.json({ status: 'ok', env: config.env });
+  app.get('/api/health', async (req, res) => {
+    res.json({
+      status: 'ok',
+      env: config.env,
+      demoAccounts: await countDemoAccounts(),
+      demoAccountsExpected: DEMO_ACCOUNT_COUNT,
+    });
   });
 
   app.use('/api/auth', authRoutes);

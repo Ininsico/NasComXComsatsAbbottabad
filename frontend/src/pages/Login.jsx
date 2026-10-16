@@ -1,11 +1,11 @@
-import { Info } from 'lucide-react';
-import { useState } from 'react';
+import { CircleAlert, CircleCheckBig, Info } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import AuthShell from '../components/AuthShell.jsx';
 import { useAuth } from '../context/authContext.js';
 import { useToast } from '../context/toastContext.js';
 import { DEMO_ACCOUNTS } from '../data/site.js';
-import { ApiError } from '../lib/api.js';
+import { api, API_BASE_URL, ApiError } from '../lib/api.js';
 
 export default function Login() {
   const { login, user } = useAuth();
@@ -17,6 +17,34 @@ export default function Login() {
   const [fieldErrors, setFieldErrors] = useState({});
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [apiStatus, setApiStatus] = useState('checking');
+  const [demoAccounts, setDemoAccounts] = useState(null);
+
+  useEffect(() => {
+    let active = true;
+
+    api
+      .health()
+      .then((payload) => {
+        if (!active) return;
+        setApiStatus('ok');
+        setDemoAccounts(
+          typeof payload.demoAccounts === 'number'
+            ? { present: payload.demoAccounts, expected: payload.demoAccountsExpected ?? null }
+            : null,
+        );
+      })
+      .catch(() => {
+        if (active) setApiStatus('down');
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const demoDataMissing =
+    apiStatus === 'ok' && demoAccounts && demoAccounts.expected && demoAccounts.present < demoAccounts.expected;
 
   const redirectTo = location.state?.from ?? '/dashboard';
 
@@ -43,7 +71,11 @@ export default function Login() {
       }
       const message = loginError.message ?? 'Unable to log in. Please try again.';
       setError(message);
-      showToast({ tone: 'error', title: 'Sign in failed', message });
+      showToast({
+        tone: 'error',
+        title: 'Sign in failed',
+        message: `${message} (API: ${API_BASE_URL})`,
+      });
     } finally {
       setSubmitting(false);
     }
@@ -69,6 +101,42 @@ export default function Login() {
         <p className="muted" style={{ fontSize: '0.8125rem' }}>
           Sign in to open your campus dashboard.
         </p>
+
+        <div className="api-status" style={{ marginTop: '0.875rem' }}>
+          <span
+            className={`pill ${
+              apiStatus === 'ok'
+                ? demoDataMissing
+                  ? 'pill--pending'
+                  : 'pill--done'
+                : apiStatus === 'down'
+                  ? 'pill--problem'
+                  : 'pill--neutral'
+            }`}
+          >
+            {apiStatus === 'ok' ? (
+              <CircleCheckBig size={12} aria-hidden="true" />
+            ) : apiStatus === 'down' ? (
+              <CircleAlert size={12} aria-hidden="true" />
+            ) : null}
+            {apiStatus === 'down'
+              ? 'API unreachable'
+              : apiStatus === 'checking'
+                ? 'Checking API…'
+                : demoAccounts
+                  ? `API connected · ${demoAccounts.present}/${demoAccounts.expected} demo accounts`
+                  : 'API connected'}
+          </span>
+          <span className="api-status__url">{API_BASE_URL}</span>
+        </div>
+
+        {demoDataMissing ? (
+          <p className="alert alert--pending" style={{ marginBottom: '1rem' }}>
+            <Info size={15} aria-hidden="true" />
+            This backend has no demo accounts yet. Restart it — running the API seeds them on boot —
+            or run <code>npm --prefix backend run seed</code>.
+          </p>
+        ) : null}
 
         <div className="field" style={{ marginTop: '1.25rem' }}>
           <label htmlFor="instant-login">Instant demo login</label>

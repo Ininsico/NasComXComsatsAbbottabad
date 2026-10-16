@@ -1347,6 +1347,22 @@
   color: var(--muted-2);
 }
 
+.api-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.api-status__url {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  color: var(--muted-2);
+  overflow-wrap: anywhere;
+}
+
 .auth__or::before,
 .auth__or::after {
   content: "";
