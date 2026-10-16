@@ -11,6 +11,7 @@ data/*.json
 data/*.png
 !data/.gitkeep
 data/whatsapp-session/
+.wwebjs_cache/
 uploads/
 
 # Logs

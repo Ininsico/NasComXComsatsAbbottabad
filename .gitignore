@@ -37,6 +37,7 @@ backend/uploads/
 AI/data/
 backend/data/whatsapp-session/
 backend/data/whatsapp-qr.png
+backend/.wwebjs_cache/
 
 # Test / coverage
 coverage/
