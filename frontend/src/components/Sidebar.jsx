@@ -1,28 +1,10 @@
-import {
-  BookOpen,
-  ChevronsLeft,
-  ChevronsRight,
-  Globe,
-  GraduationCap,
-  LayoutDashboard,
-  LogOut,
-  Mail,
-  Users,
-} from 'lucide-react';
+import { ChevronsLeft, ChevronsRight, LayoutDashboard, LogOut } from 'lucide-react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/authContext.js';
 import { useToast } from '../context/toastContext.js';
 import { ROLE_LABELS } from '../data/site.js';
 
 const PORTAL_LINKS = [{ to: '/dashboard', label: 'Overview', icon: LayoutDashboard }];
-
-const SITE_LINKS = [
-  { to: '/academics', label: 'Academics', icon: BookOpen },
-  { to: '/admissions', label: 'Admissions', icon: GraduationCap },
-  { to: '/faculty', label: 'Faculty', icon: Users },
-  { to: '/contact', label: 'Contact', icon: Mail },
-  { to: '/', label: 'Home page', icon: Globe, end: true },
-];
 
 function initials(name) {
   return name
@@ -89,14 +71,14 @@ export default function Sidebar({ collapsed, onToggleCollapse, open, onNavigate 
       </div>
 
       <nav className="sidebar__nav">
+        <p className="sidebar__section">Portal</p>
         {PORTAL_LINKS.map((link) => (
           <SidebarLink key={link.to} link={link} onNavigate={onNavigate} />
         ))}
-
-        <p className="sidebar__section">Public site</p>
-        {SITE_LINKS.map((link) => (
-          <SidebarLink key={link.to} link={link} onNavigate={onNavigate} />
-        ))}
+        <p className="sidebar__section">Session</p>
+        <p className="sidebar__note">
+          The public website is closed while you are signed in. Log out to browse it again.
+        </p>
       </nav>
 
       <div className="sidebar__foot">

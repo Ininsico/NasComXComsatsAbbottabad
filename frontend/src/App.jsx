@@ -2,6 +2,7 @@ import { Route, Routes } from 'react-router-dom';
 import AppLayout from './components/AppLayout.jsx';
 import Layout from './components/Layout.jsx';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
+import PublicOnlyRoute from './components/PublicOnlyRoute.jsx';
 import ScrollToTop from './components/ScrollToTop.jsx';
 import About from './pages/About.jsx';
 import Academics from './pages/Academics.jsx';
@@ -20,7 +21,13 @@ export default function App() {
     <>
       <ScrollToTop />
       <Routes>
-        <Route element={<Layout />}>
+        <Route
+          element={
+            <PublicOnlyRoute>
+              <Layout />
+            </PublicOnlyRoute>
+          }
+        >
           <Route index element={<Home />} />
           <Route path="about" element={<About />} />
           <Route path="academics" element={<Academics />} />
