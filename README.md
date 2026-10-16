@@ -11,12 +11,13 @@ working account system: sign up, log in, and a role-aware portal for students, p
 The API seeds these accounts on first boot (and `npm run seed` re-runs it safely). The sign-in page
 has an **instant login dropdown** so you can jump straight into any of them.
 
-| Role    | Email                                          | Password     | What you will see                            |
-| ------- | ---------------------------------------------- | ------------ | -------------------------------------------- |
-| Student | `ayesha.siddiqui@comsats-abbottabad.edu.pk`    | `Student123` | Semester 6 record, GPA, an outstanding fee    |
-| Student | `hamza.riaz@comsats-abbottabad.edu.pk`         | `Student123` | Same shape, top of merit, all dues cleared    |
-| Parent  | `rubina.aslam@comsats-abbottabad.edu.pk`       | `Parent123`  | One linked ward with her attendance and fees  |
-| Faculty | `sadia.khan@comsats-abbottabad.edu.pk`         | `Faculty123` | Teaching load, advisees, pending grading      |
+| Role          | Email                                        | Password     | What you will see                             |
+| ------------- | -------------------------------------------- | ------------ | --------------------------------------------- |
+| Administrator | `admin@comsats-abbottabad.edu.pk`            | `Admin12345` | The admin console — every account and record   |
+| Student       | `ayesha.siddiqui@comsats-abbottabad.edu.pk`  | `Student123` | Semester 6 record, GPA, an outstanding fee     |
+| Student       | `hamza.riaz@comsats-abbottabad.edu.pk`       | `Student123` | Same shape, top of merit, all dues cleared     |
+| Parent        | `rubina.aslam@comsats-abbottabad.edu.pk`     | `Parent123`  | One linked ward with her attendance and fees   |
+| Faculty       | `sadia.khan@comsats-abbottabad.edu.pk`       | `Faculty123` | Teaching load, advisees, every student's files |
 
 ## What is in the repo
 
@@ -53,6 +54,8 @@ has an **instant login dropdown** so you can jump straight into any of them.
 | `/login`      | Sign in, with instant demo login dropdown                         |
 | `/signup`     | Create an account (student / parent / faculty)                    |
 | `/dashboard`  | Portal — dark collapsible sidebar plus a role-aware dashboard      |
+| `/documents`  | File uploads on Cloudinary; students upload, teachers see everything |
+| `/admin`      | Admin console: accounts, student records, files, integrations      |
 
 ## Getting started
 
@@ -97,6 +100,11 @@ Base URL: `http://localhost:4000`
 | GET    | `/api/campus/faculty`       | —      | —                                  | `{ faculty }`         |
 | GET    | `/api/campus/announcements` | —      | —                                  | `{ announcements }`   |
 | GET    | `/api/account/overview`     | Bearer | —                                  | role-aware dashboard  |
+| GET    | `/api/documents`            | Bearer | —                                  | visible files         |
+| POST   | `/api/documents`            | Bearer | `multipart` (`file`, `title?`)      | `{ document }`        |
+| DELETE | `/api/documents/:id`        | Bearer | —                                  | `{ removed }`         |
+| GET    | `/api/admin/overview`       | Admin  | —                                  | whole-campus snapshot |
+| POST   | `/api/assistant/ask`        | Bearer | `{ question }`                     | `{ answer, model }`   |
 
 Validation failures return `400` with a per-field `fields` object. Duplicate emails return `409`,
 bad credentials `401`. Passwords are hashed with bcrypt and never leave the API; sessions use signed
@@ -140,6 +148,27 @@ One calm, cohesive system — adapt content, never classes.
 **Layout** — public pages use a fixed translucent header and a 1280px container. The signed-in
 portal is a dark collapsible sidebar (translucent `white/10` overlays, white logo plate) with a
 light airy content area capped at 1600px.
+
+## Integrations
+
+Both are configured in `backend/.env` and are optional — the app degrades gracefully when a key is
+missing, and the admin console shows each one as connected or not configured.
+
+**Cloudinary — file uploads.** Students, faculty and administrators upload through
+`POST /api/documents`; the file goes to Cloudinary (folder set by `CLOUDINARY_FOLDER`, 8 MB limit)
+and only the metadata is stored locally. Visibility is scoped by role: students see their own
+uploads, **faculty and admins see every file**, and parents see files belonging to their linked
+ward (read-only). Deleting a document removes both the metadata and the remote asset.
+
+**Groq — campus assistant.** `POST /api/assistant/ask` answers questions using the seeded campus
+data (programmes, requirements, key dates, announcements) as context. The model is set by
+`GROQ_MODEL`; list what your key can access with:
+
+```bash
+curl https://api.groq.com/openai/v1/models -H "Authorization: Bearer $GROQ_API_KEY"
+```
+
+If a call fails, the API passes Groq's own error message through so a wrong model name is obvious.
 
 ## Data storage
 

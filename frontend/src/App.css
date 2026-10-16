@@ -1403,6 +1403,91 @@
   color: var(--muted);
 }
 
+/* Assistant ------------------------------------------------------------ */
+
+.assistant__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.assistant__head .tile__icon {
+  margin-bottom: 0;
+}
+
+.assistant__form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.625rem;
+}
+
+.assistant__form .input {
+  flex: 1 1 16rem;
+}
+
+.assistant__suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.875rem;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0.625rem;
+  border: 1px solid var(--line);
+  border-radius: var(--r-full);
+  background: var(--surface);
+  color: var(--slate-600);
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 200ms ease;
+}
+
+.chip:hover:not(:disabled) {
+  border-color: var(--blue-200);
+  background: var(--blue-50);
+  color: var(--blue-700);
+}
+
+.chip:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.assistant__answer {
+  margin-top: 1rem;
+  padding: 0.875rem 1rem;
+  border: 1px solid var(--blue-100);
+  border-radius: var(--r-2xl);
+  background: var(--blue-50);
+}
+
+.assistant__answer p {
+  margin: 0 0 0.375rem;
+  font-size: 0.8125rem;
+  color: var(--slate-700);
+  white-space: pre-wrap;
+}
+
+/* Document upload ------------------------------------------------------ */
+
+.doc-upload {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  align-items: end;
+}
+
+.doc-upload .btn {
+  justify-self: start;
+}
+
 .sidebar__collapse {
   display: grid;
   place-items: center;

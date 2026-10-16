@@ -41,3 +41,14 @@ export async function requireAuth(req, res, next) {
     return res.status(401).json({ error: 'Session expired or invalid' });
   }
 }
+
+/** Use after requireAuth to restrict a route to specific roles. */
+export function requireRole(...roles) {
+  return (req, res, next) => {
+    if (!req.user || !roles.includes(req.user.role)) {
+      return res.status(403).json({ error: 'You do not have access to this resource' });
+    }
+
+    return next();
+  };
+}

@@ -1,4 +1,7 @@
+/** Roles a visitor may choose at signup. `admin` is deliberately absent. */
 export const ROLES = ['student', 'parent', 'faculty'];
+
+export const ADMIN_ROLE = 'admin';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 

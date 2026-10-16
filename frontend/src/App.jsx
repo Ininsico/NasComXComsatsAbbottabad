@@ -6,9 +6,11 @@ import PublicOnlyRoute from './components/PublicOnlyRoute.jsx';
 import ScrollToTop from './components/ScrollToTop.jsx';
 import About from './pages/About.jsx';
 import Academics from './pages/Academics.jsx';
+import Admin from './pages/Admin.jsx';
 import Admissions from './pages/Admissions.jsx';
 import Contact from './pages/Contact.jsx';
 import Dashboard from './pages/Dashboard.jsx';
+import Documents from './pages/Documents.jsx';
 import Faculty from './pages/Faculty.jsx';
 import Home from './pages/Home.jsx';
 import Login from './pages/Login.jsx';
@@ -48,6 +50,15 @@ export default function App() {
           }
         >
           <Route path="dashboard" element={<Dashboard />} />
+          <Route path="documents" element={<Documents />} />
+          <Route
+            path="admin"
+            element={
+              <ProtectedRoute roles={['admin']}>
+                <Admin />
+              </ProtectedRoute>
+            }
+          />
         </Route>
       </Routes>
     </>

@@ -142,3 +142,33 @@ export async function buildOverview(user) {
     },
   };
 }
+
+/** Campus-wide view of every tracked student record, for the admin console. */
+export async function listStudentSummaries() {
+  const summaries = [];
+
+  for (const [email, record] of Object.entries(STUDENT_RECORDS)) {
+    const totals = summariseCourses(record.courses);
+    const outstanding = (record.fees ?? []).find((fee) => fee.status !== 'Paid') ?? null;
+    const user = await findUserByEmail(email);
+
+    summaries.push({
+      email,
+      name: user?.name ?? email,
+      registrationNo: record.registrationNo,
+      programme: record.programme,
+      semester: record.semester,
+      section: record.section,
+      advisor: record.advisor,
+      cgpa: record.cgpa,
+      gpa: totals.gpa,
+      attendance: totals.attendance,
+      creditsEarned: record.creditsEarnedBefore + totals.creditsEarned,
+      feeStatus: outstanding ? 'Outstanding' : 'Cleared',
+      feeDue: outstanding?.amount ?? 0,
+      feeDueDate: outstanding?.dueDate ?? null,
+    });
+  }
+
+  return summaries;
+}

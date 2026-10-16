@@ -15,22 +15,33 @@ export const CONTACT = {
   hours: 'Monday – Friday, 8:30 AM – 4:30 PM',
 };
 
+/** Roles a visitor may choose at signup. Administrators are seeded, not self-registered. */
 export const ROLES = [
   { value: 'student', label: 'Student' },
   { value: 'parent', label: 'Parent / Guardian' },
   { value: 'faculty', label: 'Faculty / Staff' },
 ];
 
-export const ROLE_LABELS = ROLES.reduce((acc, role) => {
-  acc[role.value] = role.label;
-  return acc;
-}, {});
+export const ROLE_LABELS = {
+  student: 'Student',
+  parent: 'Parent / Guardian',
+  faculty: 'Faculty / Staff',
+  admin: 'Administrator',
+};
+
+export const ADMIN_ROLE = 'admin';
 
 /**
  * Seeded on the API at first boot (backend/src/data/records.js).
  * Drives the instant-login dropdown on the sign-in page.
  */
 export const DEMO_ACCOUNTS = [
+  {
+    label: 'Administrator',
+    summary: 'sees every record on campus',
+    email: 'admin@comsats-abbottabad.edu.pk',
+    password: 'Admin12345',
+  },
   {
     label: 'Student',
     summary: 'Semester 6 · fee outstanding',
@@ -51,7 +62,7 @@ export const DEMO_ACCOUNTS = [
   },
   {
     label: 'Faculty',
-    summary: 'teaching load & grading',
+    summary: 'teaching load, grading & student files',
     email: 'sadia.khan@comsats-abbottabad.edu.pk',
     password: 'Faculty123',
   },

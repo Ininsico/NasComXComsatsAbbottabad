@@ -13,8 +13,11 @@ import {
   Users,
 } from 'lucide-react';
 import { useCallback } from 'react';
+import { Navigate } from 'react-router-dom';
+import AssistantCard from '../components/AssistantCard.jsx';
 import AsyncSection from '../components/AsyncSection.jsx';
 import { useAuth } from '../context/authContext.js';
+import { ADMIN_ROLE } from '../data/site.js';
 import useApiResource from '../hooks/useApiResource.js';
 import { api } from '../lib/api.js';
 import { formatCurrency, formatDate, percent } from '../lib/format.js';
@@ -333,6 +336,10 @@ export default function Dashboard() {
   const loadOverview = useCallback(() => api.overview(token), [token]);
   const { data, error, loading, reload } = useApiResource(loadOverview);
 
+  if (user.role === ADMIN_ROLE) {
+    return <Navigate to="/admin" replace />;
+  }
+
   return (
     <>
       <div className="dash-head">
@@ -374,6 +381,10 @@ export default function Dashboard() {
           </>
         ) : null}
       </AsyncSection>
+
+      <div className="dash-section">
+        <AssistantCard />
+      </div>
     </>
   );
 }

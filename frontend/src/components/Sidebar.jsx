@@ -1,10 +1,25 @@
-import { ChevronsLeft, ChevronsRight, LayoutDashboard, LogOut } from 'lucide-react';
+import {
+  ChevronsLeft,
+  ChevronsRight,
+  FileText,
+  LayoutDashboard,
+  LogOut,
+  ShieldCheck,
+} from 'lucide-react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/authContext.js';
 import { useToast } from '../context/toastContext.js';
-import { ROLE_LABELS } from '../data/site.js';
+import { ADMIN_ROLE, ROLE_LABELS } from '../data/site.js';
 
-const PORTAL_LINKS = [{ to: '/dashboard', label: 'Overview', icon: LayoutDashboard }];
+const PORTAL_LINKS = [
+  { to: '/dashboard', label: 'Overview', icon: LayoutDashboard },
+  { to: '/documents', label: 'Documents', icon: FileText },
+];
+
+/** Admins land on the console, so Overview would only bounce them there. */
+const ADMIN_PORTAL_LINKS = [{ to: '/documents', label: 'Documents', icon: FileText }];
+
+const ADMIN_LINKS = [{ to: '/admin', label: 'Admin console', icon: ShieldCheck }];
 
 function initials(name) {
   return name
@@ -36,6 +51,8 @@ export default function Sidebar({ collapsed, onToggleCollapse, open, onNavigate 
   const { user, logout } = useAuth();
   const { showToast } = useToast();
   const navigate = useNavigate();
+
+  const portalLinks = user.role === ADMIN_ROLE ? ADMIN_PORTAL_LINKS : PORTAL_LINKS;
 
   function handleLogout() {
     logout();
@@ -72,9 +89,19 @@ export default function Sidebar({ collapsed, onToggleCollapse, open, onNavigate 
 
       <nav className="sidebar__nav">
         <p className="sidebar__section">Portal</p>
-        {PORTAL_LINKS.map((link) => (
+        {portalLinks.map((link) => (
           <SidebarLink key={link.to} link={link} onNavigate={onNavigate} />
         ))}
+
+        {user.role === ADMIN_ROLE ? (
+          <>
+            <p className="sidebar__section">Administration</p>
+            {ADMIN_LINKS.map((link) => (
+              <SidebarLink key={link.to} link={link} onNavigate={onNavigate} />
+            ))}
+          </>
+        ) : null}
+
         <p className="sidebar__section">Session</p>
         <p className="sidebar__note">
           The public website is closed while you are signed in. Log out to browse it again.

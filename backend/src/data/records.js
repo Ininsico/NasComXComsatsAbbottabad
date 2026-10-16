@@ -8,6 +8,12 @@
 
 export const DEMO_ACCOUNTS = [
   {
+    name: 'Campus Administrator',
+    email: 'admin@comsats-abbottabad.edu.pk',
+    password: 'Admin12345',
+    role: 'admin',
+  },
+  {
     name: 'Ayesha Siddiqui',
     email: 'ayesha.siddiqui@comsats-abbottabad.edu.pk',
     password: 'Student123',

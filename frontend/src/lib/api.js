@@ -12,22 +12,9 @@ export class ApiError extends Error {
   }
 }
 
-async function request(path, { method = 'GET', body, token } = {}) {
-  let response;
+const OFFLINE = 'Cannot reach the server. Make sure the API is running.';
 
-  try {
-    response = await fetch(`${BASE_URL}${path}`, {
-      method,
-      headers: {
-        ...(body ? { 'Content-Type': 'application/json' } : {}),
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-      body: body ? JSON.stringify(body) : undefined,
-    });
-  } catch {
-    throw new ApiError('Cannot reach the server. Make sure the API is running.', 0);
-  }
-
+async function parse(response) {
   const payload = await response.json().catch(() => null);
 
   if (!response.ok) {
@@ -41,6 +28,25 @@ async function request(path, { method = 'GET', body, token } = {}) {
   return payload;
 }
 
+async function request(path, { method = 'GET', body, token } = {}) {
+  let response;
+
+  try {
+    response = await fetch(`${BASE_URL}${path}`, {
+      method,
+      headers: {
+        ...(body ? { 'Content-Type': 'application/json' } : {}),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch {
+    throw new ApiError(OFFLINE, 0);
+  }
+
+  return parse(response);
+}
+
 export const api = {
   health: () => request('/api/health'),
   signup: (details) => request('/api/auth/signup', { method: 'POST', body: details }),
@@ -50,4 +56,30 @@ export const api = {
   faculty: () => request('/api/campus/faculty'),
   announcements: () => request('/api/campus/announcements'),
   overview: (token) => request('/api/account/overview', { token }),
+  adminOverview: (token) => request('/api/admin/overview', { token }),
+  ask: (token, question) =>
+    request('/api/assistant/ask', { method: 'POST', body: { question }, token }),
+
+  documents: (token) => request('/api/documents', { token }),
+  removeDocument: (token, id) => request(`/api/documents/${id}`, { method: 'DELETE', token }),
+
+  uploadDocument: async (token, { file, title }) => {
+    const form = new FormData();
+    form.append('title', title ?? '');
+    form.append('file', file);
+
+    let response;
+
+    try {
+      response = await fetch(`${BASE_URL}/api/documents`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: form,
+      });
+    } catch {
+      throw new ApiError(OFFLINE, 0);
+    }
+
+    return parse(response);
+  },
 };

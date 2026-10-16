@@ -2,7 +2,7 @@ import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/authContext.js';
 import { SkeletonList, SkeletonTile, SkeletonTitle } from './Skeletons.jsx';
 
-export default function ProtectedRoute({ children }) {
+export default function ProtectedRoute({ children, roles }) {
   const { user, loading } = useAuth();
   const location = useLocation();
 
@@ -23,6 +23,10 @@ export default function ProtectedRoute({ children }) {
 
   if (!user) {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+  }
+
+  if (roles && !roles.includes(user.role)) {
+    return <Navigate to="/dashboard" replace />;
   }
 
   return children;

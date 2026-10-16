@@ -47,6 +47,12 @@ export async function findUserById(id) {
   return users.find((user) => user.id === id) ?? null;
 }
 
+/** Every account, with password hashes stripped. */
+export async function listUsers() {
+  const users = await readAll();
+  return users.map(toPublicUser);
+}
+
 export async function createUser({ name, email, passwordHash, role }) {
   return withLock(async () => {
     const users = await readAll();

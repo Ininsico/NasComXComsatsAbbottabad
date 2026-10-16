@@ -3,8 +3,11 @@ import express from 'express';
 import { config } from './config.js';
 import { countDemoAccounts, DEMO_ACCOUNT_COUNT } from './lib/seed.js';
 import accountRoutes from './routes/account.js';
+import adminRoutes from './routes/admin.js';
+import assistantRoutes from './routes/assistant.js';
 import authRoutes from './routes/auth.js';
 import campusRoutes from './routes/campus.js';
+import documentRoutes from './routes/documents.js';
 
 export function createApp() {
   const app = express();
@@ -34,6 +37,9 @@ export function createApp() {
   app.use('/api/auth', authRoutes);
   app.use('/api/campus', campusRoutes);
   app.use('/api/account', accountRoutes);
+  app.use('/api/documents', documentRoutes);
+  app.use('/api/admin', adminRoutes);
+  app.use('/api/assistant', assistantRoutes);
 
   app.use((req, res) => {
     res.status(404).json({ error: `Not found: ${req.method} ${req.originalUrl}` });
