@@ -63,6 +63,15 @@ export const api = {
   documents: (token) => request('/api/documents', { token }),
   removeDocument: (token, id) => request(`/api/documents/${id}`, { method: 'DELETE', token }),
 
+  paymentConfig: (token) => request('/api/payments/config', { token }),
+  paymentPlans: (token) => request('/api/payments/plans', { token }),
+  paymentIntents: (token) => request('/api/payments/intents', { token }),
+  createPaymentIntent: (token, planId) =>
+    request('/api/payments/intents', { method: 'POST', body: { planId }, token }),
+  checkPaymentIntent: (token, id) =>
+    request(`/api/payments/intents/${id}/check`, { method: 'POST', token }),
+  wallet: (token) => request('/api/payments/wallet', { token }),
+
   uploadDocument: async (token, { file, title }) => {
     const form = new FormData();
     form.append('title', title ?? '');

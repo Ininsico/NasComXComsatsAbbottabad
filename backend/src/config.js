@@ -28,6 +28,17 @@ export const config = {
     model: process.env.GROQ_MODEL ?? 'llama-3.3-70b-versatile',
     endpoint: 'https://api.groq.com/openai/v1/chat/completions',
   },
+  binance: {
+    baseUrl: (process.env.BINANCE_BASE_URL ?? 'https://api.binance.com').replace(/\/+$/, ''),
+    apiKey: process.env.BINANCE_API_KEY ?? '',
+    apiSecret: process.env.BINANCE_API_SECRET ?? '',
+    coin: process.env.BINANCE_DEPOSIT_COIN ?? 'USDT',
+    network: process.env.BINANCE_DEPOSIT_NETWORK ?? 'TRX',
+  },
+  payments: {
+    tolerancePercent: Number(process.env.PAYMENT_TOLERANCE_PERCENT ?? 10),
+    pollSeconds: Number(process.env.PAYMENT_POLL_SECONDS ?? 30),
+  },
 };
 
 config.cloudinary.configured = Boolean(
@@ -35,6 +46,9 @@ config.cloudinary.configured = Boolean(
 );
 
 config.groq.configured = Boolean(config.groq.apiKey);
+
+/** Binance is used read-only, so both halves of the key pair are required. */
+config.binance.configured = Boolean(config.binance.apiKey && config.binance.apiSecret);
 
 if (config.env === 'production' && !process.env.JWT_SECRET) {
   throw new Error('JWT_SECRET must be set when NODE_ENV=production');

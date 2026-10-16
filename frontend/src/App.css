@@ -1488,6 +1488,81 @@
   justify-self: start;
 }
 
+/* Payments ------------------------------------------------------------ */
+
+.pay-panel__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+}
+
+.pay-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1rem;
+}
+
+.pay-cell {
+  padding: 0.875rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--r-2xl);
+  background: var(--surface-2);
+}
+
+.pay-cell__value {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0.25rem 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-strong);
+  overflow-wrap: anywhere;
+}
+
+.pay-cell__value--mono {
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+}
+
+.pay-address {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+  padding: 0.875rem 1rem;
+  border: 1px solid var(--blue-100);
+  border-radius: var(--r-2xl);
+  background: var(--blue-50);
+}
+
+.pay-address__value {
+  display: block;
+  margin-top: 0.25rem;
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  color: var(--slate-900);
+  overflow-wrap: anywhere;
+}
+
+.pay-plan__amount {
+  margin: 0.25rem 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--blue-700);
+}
+
+.pay-plan__amount span {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--muted);
+}
+
 .sidebar__collapse {
   display: grid;
   place-items: center;

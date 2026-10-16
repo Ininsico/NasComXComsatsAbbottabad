@@ -1,5 +1,6 @@
 import { createApp } from './app.js';
 import { config } from './config.js';
+import { startPaymentWatcher } from './lib/paymentWatcher.js';
 import { seedDemoAccounts } from './lib/seed.js';
 
 const seeded = await seedDemoAccounts();
@@ -11,4 +12,5 @@ const app = createApp();
 
 app.listen(config.port, () => {
   console.log(`COMSATS API listening on http://localhost:${config.port} (${config.env})`);
+  startPaymentWatcher();
 });

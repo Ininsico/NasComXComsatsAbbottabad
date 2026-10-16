@@ -1,5 +1,6 @@
 import {
   Bell,
+  Bitcoin,
   BookOpen,
   Bot,
   CalendarCheck,
@@ -9,8 +10,11 @@ import {
   GraduationCap,
   HardDrive,
   RefreshCw,
+  ShieldCheck,
   TrendingUp,
+  TriangleAlert,
   Users,
+  Wallet,
 } from 'lucide-react';
 import { useCallback } from 'react';
 import { Link } from 'react-router-dom';
@@ -54,6 +58,9 @@ export default function Admin() {
   const { token } = useAuth();
   const loadOverview = useCallback(() => api.adminOverview(token), [token]);
   const { data, error, loading, reload } = useApiResource(loadOverview);
+
+  const loadWallet = useCallback(() => api.wallet(token), [token]);
+  const wallet = useApiResource(loadWallet);
 
   return (
     <>
@@ -288,6 +295,88 @@ export default function Admin() {
                   </table>
                 </div>
               )}
+            </section>
+
+            <section className="dash-section">
+              <SectionTitle icon={Wallet}>Crypto payments (read-only)</SectionTitle>
+
+              {wallet.loading ? (
+                <div className="skeleton-grid">
+                  <div className="skeleton skeleton--tile" />
+                  <div className="skeleton skeleton--tile" />
+                </div>
+              ) : null}
+
+              {wallet.error ? (
+                <p className="alert alert--pending">
+                  <TriangleAlert size={15} aria-hidden="true" />
+                  {wallet.error.message}
+                </p>
+              ) : null}
+
+              {wallet.data ? (
+                <>
+                  {wallet.data.permissions.canWithdraw || wallet.data.permissions.canTrade ? (
+                    <p className="alert alert--error" style={{ marginBottom: '1rem' }}>
+                      <ShieldCheck size={15} aria-hidden="true" />
+                      This API key can trade and withdraw. The portal only ever reads from Binance, but
+                      restrict the key to “Enable Reading” so a leaked secret cannot move funds.
+                    </p>
+                  ) : (
+                    <p className="alert alert--success" style={{ marginBottom: '1rem' }}>
+                      <ShieldCheck size={15} aria-hidden="true" />
+                      Key is read-only — no trading or withdrawal permission.
+                    </p>
+                  )}
+
+                  <div className="dash-grid">
+                    <Tile
+                      icon={Wallet}
+                      label="Funded assets"
+                      value={wallet.data.balances.length}
+                      tone={wallet.data.balances.length > 0 ? 'emerald' : 'amber'}
+                    />
+                    <Tile
+                      icon={Bitcoin}
+                      label="Deposits on record"
+                      value={wallet.data.deposits.length}
+                    />
+                  </div>
+
+                  {wallet.data.balances.length > 0 ? (
+                    <div className="table-wrap" style={{ marginTop: '1rem' }}>
+                      <table className="table">
+                        <caption>Spot wallet balances</caption>
+                        <thead>
+                          <tr>
+                            <th scope="col">Asset</th>
+                            <th scope="col">Free</th>
+                            <th scope="col">Locked</th>
+                            <th scope="col">Total</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {wallet.data.balances.map((balance) => (
+                            <tr key={balance.asset}>
+                              <th scope="row">{balance.asset}</th>
+                              <td>{balance.free}</td>
+                              <td>{balance.locked}</td>
+                              <td>{balance.total}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : null}
+
+                  <div className="btn-row" style={{ marginTop: '1rem' }}>
+                    <Link className="btn btn-secondary btn-sm" to="/payments">
+                      <Wallet size={14} aria-hidden="true" />
+                      Open payments
+                    </Link>
+                  </div>
+                </>
+              ) : null}
             </section>
 
             <section className="dash-section">

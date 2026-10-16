@@ -56,6 +56,7 @@ has an **instant login dropdown** so you can jump straight into any of them.
 | `/dashboard`  | Portal — dark collapsible sidebar plus a role-aware dashboard      |
 | `/documents`  | File uploads on Cloudinary; students upload, teachers see everything |
 | `/admin`      | Admin console: accounts, student records, files, integrations      |
+| `/payments`   | Subscription plans and crypto deposits, confirmed automatically    |
 
 ## Getting started
 
@@ -105,6 +106,11 @@ Base URL: `http://localhost:4000`
 | DELETE | `/api/documents/:id`        | Bearer | —                                  | `{ removed }`         |
 | GET    | `/api/admin/overview`       | Admin  | —                                  | whole-campus snapshot |
 | POST   | `/api/assistant/ask`        | Bearer | `{ question }`                     | `{ answer, model }`   |
+| GET    | `/api/payments/plans`       | Bearer | —                                  | `{ plans }`           |
+| GET    | `/api/payments/intents`     | Bearer | —                                  | own intents (all for admin) |
+| POST   | `/api/payments/intents`     | Bearer | `{ planId }`                       | `{ intent, addressTag }` |
+| POST   | `/api/payments/intents/:id/check` | Bearer | —                            | `{ intent, updated }` |
+| GET    | `/api/payments/wallet`      | Admin  | —                                  | balances + key permissions |
 
 Validation failures return `400` with a per-field `fields` object. Duplicate emails return `409`,
 bad credentials `401`. Passwords are hashed with bcrypt and never leave the API; sessions use signed
@@ -169,6 +175,26 @@ curl https://api.groq.com/openai/v1/models -H "Authorization: Bearer $GROQ_API_K
 ```
 
 If a call fails, the API passes Groq's own error message through so a wrong model name is obvious.
+
+**Binance — subscription payments (read-only).** A student picks a plan and the API opens a deposit
+window: it fetches the live deposit address for `BINANCE_DEPOSIT_COIN` / `BINANCE_DEPOSIT_NETWORK`,
+records the expected amount with a ±10% band (`PAYMENT_TOLERANCE_PERCENT`) and expires after an
+hour. A background watcher polls Binance deposit history every `PAYMENT_POLL_SECONDS` seconds and
+settles each intent as the money arrives:
+
+- **within the band** → `confirmed`; above it → `overpaid` (accepted, but flagged for the finance office)
+- **below the band** → `mismatch`, stating the shortfall so a top-up can complete it
+- several deposits sum towards one subscription, and a transaction can only ever be claimed once,
+  so two subscriptions can never share a single deposit
+
+**This integration is deliberately read-only.** `backend/src/lib/binance.js` exposes no generic
+request helper — only signed GETs for balances, deposit history and the deposit address — so no
+order, transfer or withdrawal route is reachable from this codebase. The admin wallet panel also
+reports the key's own `canTrade` / `canWithdraw` flags, so an over-permissioned key is visible
+rather than silent.
+
+> Use a key with **Enable Reading** only, plus an IP whitelist. A key with trading or withdrawal
+> enabled can drain the account if the secret ever leaks.
 
 ## Data storage
 

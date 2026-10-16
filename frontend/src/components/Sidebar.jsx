@@ -5,6 +5,7 @@ import {
   LayoutDashboard,
   LogOut,
   ShieldCheck,
+  Wallet,
 } from 'lucide-react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/authContext.js';
@@ -14,10 +15,14 @@ import { ADMIN_ROLE, ROLE_LABELS } from '../data/site.js';
 const PORTAL_LINKS = [
   { to: '/dashboard', label: 'Overview', icon: LayoutDashboard },
   { to: '/documents', label: 'Documents', icon: FileText },
+  { to: '/payments', label: 'Payments', icon: Wallet },
 ];
 
 /** Admins land on the console, so Overview would only bounce them there. */
-const ADMIN_PORTAL_LINKS = [{ to: '/documents', label: 'Documents', icon: FileText }];
+const ADMIN_PORTAL_LINKS = [
+  { to: '/documents', label: 'Documents', icon: FileText },
+  { to: '/payments', label: 'Payments', icon: Wallet },
+];
 
 const ADMIN_LINKS = [{ to: '/admin', label: 'Admin console', icon: ShieldCheck }];
 
