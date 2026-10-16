@@ -47,6 +47,22 @@ async function request(path, { method = 'GET', body, token } = {}) {
   return parse(response);
 }
 
+async function requestForm(path, token, form) {
+  let response;
+
+  try {
+    response = await fetch(`${BASE_URL}${path}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: form,
+    });
+  } catch {
+    throw new ApiError(OFFLINE, 0);
+  }
+
+  return parse(response);
+}
+
 export const api = {
   health: () => request('/api/health'),
   signup: (details) => request('/api/auth/signup', { method: 'POST', body: details }),
@@ -77,18 +93,15 @@ export const api = {
     form.append('title', title ?? '');
     form.append('file', file);
 
-    let response;
+    return requestForm('/api/documents', token, form);
+  },
 
-    try {
-      response = await fetch(`${BASE_URL}/api/documents`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-        body: form,
-      });
-    } catch {
-      throw new ApiError(OFFLINE, 0);
-    }
+  profile: (token) => request('/api/profile', { token }),
+  saveProfile: (token, details) => request('/api/profile', { method: 'PUT', body: details, token }),
+  uploadAvatar: (token, file) => {
+    const form = new FormData();
+    form.append('file', file);
 
-    return parse(response);
+    return requestForm('/api/profile/avatar', token, form);
   },
 };

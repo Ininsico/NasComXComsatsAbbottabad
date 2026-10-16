@@ -53,6 +53,20 @@ export async function listUsers() {
   return users.map(toPublicUser);
 }
 
+/** Apply a partial update to one account (used by the profile page for the name). */
+export async function updateUser(id, patch) {
+  return withLock(async () => {
+    const users = await readAll();
+    const index = users.findIndex((user) => user.id === id);
+
+    if (index === -1) return null;
+
+    users[index] = { ...users[index], ...patch, id: users[index].id };
+    await writeAll(users);
+    return toPublicUser(users[index]);
+  });
+}
+
 export async function createUser({ name, email, passwordHash, role }) {
   return withLock(async () => {
     const users = await readAll();

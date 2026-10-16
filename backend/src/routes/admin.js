@@ -4,6 +4,7 @@ import { ANNOUNCEMENTS, FACULTY, PROGRAMS } from '../data/campus.js';
 import { requireAuth, requireRole } from '../lib/auth.js';
 import { listDocuments } from '../lib/documents.js';
 import { listStudentSummaries } from '../lib/overview.js';
+import { loadPortfolio } from '../lib/portfolio.js';
 import { listUsers } from '../lib/store.js';
 
 const router = Router();
@@ -22,6 +23,7 @@ router.get('/overview', async (req, res) => {
   const users = await listUsers();
   const documents = await listDocuments();
   const students = await listStudentSummaries();
+  const portfolio = await loadPortfolio();
 
   const byRole = users.reduce((acc, user) => {
     acc[user.role] = (acc[user.role] ?? 0) + 1;
@@ -58,7 +60,9 @@ router.get('/overview', async (req, res) => {
     integrations: {
       cloudinary: config.cloudinary.configured,
       groq: config.groq.configured,
+      binance: config.binance.configured,
     },
+    portfolio,
     users: [...users].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
     documents,
     students,

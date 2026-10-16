@@ -57,6 +57,7 @@ has an **instant login dropdown** so you can jump straight into any of them.
 | `/documents`  | File uploads on Cloudinary; students upload, teachers see everything |
 | `/admin`      | Admin console: accounts, student records, files, integrations      |
 | `/payments`   | Subscription plans and crypto deposits, confirmed automatically    |
+| `/profile`    | Member profile: contact, guardian details and a Cloudinary photo    |
 
 ## Getting started
 
@@ -111,6 +112,9 @@ Base URL: `http://localhost:4000`
 | POST   | `/api/payments/intents`     | Bearer | `{ planId }`                       | `{ intent, addressTag }` |
 | POST   | `/api/payments/intents/:id/check` | Bearer | —                            | `{ intent, updated }` |
 | GET    | `/api/payments/wallet`      | Admin  | —                                  | balances + key permissions |
+| GET    | `/api/profile`              | Bearer | —                                  | profile + completeness |
+| PUT    | `/api/profile`              | Bearer | profile fields + `name`            | updated profile       |
+| POST   | `/api/profile/avatar`       | Bearer | `multipart` (`file`, image)        | `{ profile }`         |
 
 Validation failures return `400` with a per-field `fields` object. Duplicate emails return `409`,
 bad credentials `401`. Passwords are hashed with bcrypt and never leave the API; sessions use signed
@@ -195,6 +199,20 @@ rather than silent.
 
 > Use a key with **Enable Reading** only, plus an IP whitelist. A key with trading or withdrawal
 > enabled can drain the account if the secret ever leaks.
+
+The admin console values the whole portfolio: it marks holdings to market using Binance's public
+ticker, converts everything to USDT, and reports the **total portfolio value**, deposits received
+and subscription revenue, alongside the settled/pending/mismatched intent table. Holdings with no
+USDT market are listed but excluded from the total, and the panel never throws — if Binance is
+unreachable it says so instead of failing the console.
+
+## Member profiles
+
+Every account gets a `/profile` page with a completeness meter. Members can set a phone number,
+date of birth, address and city, guardian name and phone, programme and section, a short bio, and a
+profile photo; their name is written back to the account record. Facts the registrar owns —
+registration number, semester, advisor, department — are shown read-only alongside it. Photos upload
+to the same Cloudinary account (up to 8 MB) and the secure URL is stored on the profile.
 
 ## Data storage
 

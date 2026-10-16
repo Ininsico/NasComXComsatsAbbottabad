@@ -16,6 +16,7 @@ import Home from './pages/Home.jsx';
 import Login from './pages/Login.jsx';
 import NotFound from './pages/NotFound.jsx';
 import Payments from './pages/Payments.jsx';
+import Profile from './pages/Profile.jsx';
 import Signup from './pages/Signup.jsx';
 import './App.css';
 
@@ -51,6 +52,7 @@ export default function App() {
           }
         >
           <Route path="dashboard" element={<Dashboard />} />
+          <Route path="profile" element={<Profile />} />
           <Route path="documents" element={<Documents />} />
           <Route path="payments" element={<Payments />} />
           <Route

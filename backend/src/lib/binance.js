@@ -74,3 +74,14 @@ export function depositHistory({ coin, startTime, limit = 100 } = {}) {
 export function depositAddress({ coin, network }) {
   return signedGet('/sapi/v1/capital/deposit/address', { coin, network });
 }
+
+/** Read-only public price feed, used to value the portfolio in USDT. */
+export async function tickerPrices() {
+  const response = await fetch(`${config.binance.baseUrl}/api/v3/ticker/price`);
+
+  if (!response.ok) {
+    throw new Error(`Binance price feed replied with status ${response.status}`);
+  }
+
+  return response.json();
+}

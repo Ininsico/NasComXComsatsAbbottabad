@@ -3,8 +3,10 @@ import {
   Bitcoin,
   BookOpen,
   Bot,
+  Briefcase,
   CalendarCheck,
   CloudUpload,
+  Clock,
   CreditCard,
   FileText,
   GraduationCap,
@@ -33,6 +35,24 @@ import {
 
 const TINTED = new Set(['amber', 'emerald', 'rose']);
 
+const PAYMENT_TONES = {
+  confirmed: 'pill--done',
+  overpaid: 'pill--pending',
+  mismatch: 'pill--problem',
+  expired: 'pill--neutral',
+  awaiting_payment: 'pill--info',
+};
+
+const PAYMENT_LABELS = {
+  confirmed: 'Confirmed',
+  overpaid: 'Overpaid',
+  mismatch: 'Mismatch',
+  expired: 'Expired',
+  awaiting_payment: 'Awaiting',
+};
+
+const usdt = (value) => `${Number(value ?? 0).toFixed(2)} USDT`;
+
 function Tile({ icon: Icon, label, value, tone = 'blue' }) {
   return (
     <div className={`tile${TINTED.has(tone) ? ` tint-${tone}` : ''}`}>
@@ -54,13 +74,147 @@ function SectionTitle({ icon: Icon, children }) {
   );
 }
 
+function Portfolio({ portfolio }) {
+  if (portfolio.available === false) {
+    return (
+      <p className="alert alert--pending">
+        <TriangleAlert size={15} aria-hidden="true" />
+        Portfolio unavailable: {portfolio.reason}
+      </p>
+    );
+  }
+
+  const totals = portfolio.totals;
+  const subs = portfolio.subscriptions;
+
+  return (
+    <>
+      {portfolio.permissions.canWithdraw || portfolio.permissions.canTrade ? (
+        <p className="alert alert--error" style={{ marginBottom: '1rem' }}>
+          <ShieldCheck size={15} aria-hidden="true" />
+          This API key can trade and withdraw. The portal only ever reads from Binance, but restrict
+          the key to “Enable Reading” so a leaked secret cannot move funds.
+        </p>
+      ) : (
+        <p className="alert alert--success" style={{ marginBottom: '1rem' }}>
+          <ShieldCheck size={15} aria-hidden="true" />
+          Key is read-only — no trading or withdrawal permission.
+        </p>
+      )}
+
+      <div className="dash-grid">
+        <Tile
+          icon={Briefcase}
+          label="Total portfolio"
+          value={usdt(totals.walletValue)}
+          tone={totals.walletValue > 0 ? 'emerald' : 'amber'}
+        />
+        <Tile icon={Bitcoin} label="Deposits received" value={usdt(totals.depositsReceived)} />
+        <Tile icon={CreditCard} label="Subscription revenue" value={usdt(totals.subscriptionRevenue)} />
+        <Tile
+          icon={Clock}
+          label="Awaiting payment"
+          value={subs.pendingCount}
+          tone={subs.pendingCount > 0 ? 'amber' : 'emerald'}
+        />
+      </div>
+
+      <div className="table-wrap" style={{ marginTop: '1rem' }}>
+        <table className="table">
+          <caption>
+            Holdings valued in {portfolio.asset} · priced live from the Binance ticker
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col">Asset</th>
+              <th scope="col">Free</th>
+              <th scope="col">Locked</th>
+              <th scope="col">Price ({portfolio.asset})</th>
+              <th scope="col">Value ({portfolio.asset})</th>
+            </tr>
+          </thead>
+          <tbody>
+            {portfolio.holdings.length === 0 ? (
+              <tr>
+                <td colSpan={5} className="muted">
+                  No funds in the spot wallet yet — the portfolio is {usdt(0)}.
+                </td>
+              </tr>
+            ) : (
+              portfolio.holdings.map((holding) => (
+                <tr key={holding.asset}>
+                  <th scope="row">{holding.asset}</th>
+                  <td>{holding.free}</td>
+                  <td>{holding.locked}</td>
+                  <td>{holding.price === null ? '—' : holding.price}</td>
+                  <td>{holding.value === null ? 'unpriced' : holding.value}</td>
+                </tr>
+              ))
+            )}
+            <tr>
+              <th scope="row">Total portfolio value</th>
+              <td colSpan={3} />
+              <td>
+                <span className="pill pill--done">{usdt(totals.walletValue)}</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      {portfolio.unpriced.length > 0 ? (
+        <p className="hint" style={{ marginTop: '0.5rem' }}>
+          No USDT market for {portfolio.unpriced.join(', ')}, so those holdings are excluded from the
+          total.
+        </p>
+      ) : null}
+
+      {subs.intents.length > 0 ? (
+        <div className="table-wrap" style={{ marginTop: '1.25rem' }}>
+          <table className="table">
+            <caption>
+              {subs.settledCount} settled · {subs.pendingCount} awaiting ·{' '}
+              {subs.mismatchedCount} mismatched · {usdt(subs.revenue)} collected
+            </caption>
+            <thead>
+              <tr>
+                <th scope="col">Reference</th>
+                <th scope="col">Member</th>
+                <th scope="col">Plan</th>
+                <th scope="col">Expected</th>
+                <th scope="col">Received</th>
+                <th scope="col">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {subs.intents.map((intent) => (
+                <tr key={intent.reference}>
+                  <th scope="row" style={{ fontFamily: 'var(--font-mono)' }}>
+                    {intent.reference}
+                  </th>
+                  <td>{intent.userEmail}</td>
+                  <td>{intent.planName}</td>
+                  <td>{usdt(intent.expectedAmount)}</td>
+                  <td>{usdt(intent.matchedTotal)}</td>
+                  <td>
+                    <span className={`pill ${PAYMENT_TONES[intent.status] ?? 'pill--neutral'}`}>
+                      {PAYMENT_LABELS[intent.status] ?? intent.status}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
 export default function Admin() {
   const { token } = useAuth();
   const loadOverview = useCallback(() => api.adminOverview(token), [token]);
   const { data, error, loading, reload } = useApiResource(loadOverview);
-
-  const loadWallet = useCallback(() => api.wallet(token), [token]);
-  const wallet = useApiResource(loadWallet);
 
   return (
     <>
@@ -147,17 +301,30 @@ export default function Admin() {
               <div className="btn-row" style={{ marginTop: '1rem' }}>
                 <span className={`pill ${data.integrations.cloudinary ? 'pill--done' : 'pill--problem'}`}>
                   <CloudUpload size={12} aria-hidden="true" />
-                  Cloudinary {data.integrations.cloudinary ? 'connected' : 'not configured'}
+                  Cloudinary {data.integrations.cloudinary ? 'connected' : 'off'}
                 </span>
                 <span className={`pill ${data.integrations.groq ? 'pill--done' : 'pill--problem'}`}>
                   <Bot size={12} aria-hidden="true" />
-                  Groq {data.integrations.groq ? 'connected' : 'not configured'}
+                  Groq {data.integrations.groq ? 'connected' : 'off'}
+                </span>
+                <span className={`pill ${data.integrations.binance ? 'pill--done' : 'pill--problem'}`}>
+                  <Bitcoin size={12} aria-hidden="true" />
+                  Binance {data.integrations.binance ? 'connected' : 'off'}
                 </span>
                 <Link className="btn btn-secondary btn-sm" to="/documents">
                   <FileText size={14} aria-hidden="true" />
                   Manage documents
                 </Link>
+                <Link className="btn btn-secondary btn-sm" to="/payments">
+                  <Wallet size={14} aria-hidden="true" />
+                  Open payments
+                </Link>
               </div>
+            </section>
+
+            <section className="dash-section">
+              <SectionTitle icon={Wallet}>Crypto portfolio (read-only)</SectionTitle>
+              <Portfolio portfolio={data.portfolio} />
             </section>
 
             <section className="dash-section">
@@ -295,88 +462,6 @@ export default function Admin() {
                   </table>
                 </div>
               )}
-            </section>
-
-            <section className="dash-section">
-              <SectionTitle icon={Wallet}>Crypto payments (read-only)</SectionTitle>
-
-              {wallet.loading ? (
-                <div className="skeleton-grid">
-                  <div className="skeleton skeleton--tile" />
-                  <div className="skeleton skeleton--tile" />
-                </div>
-              ) : null}
-
-              {wallet.error ? (
-                <p className="alert alert--pending">
-                  <TriangleAlert size={15} aria-hidden="true" />
-                  {wallet.error.message}
-                </p>
-              ) : null}
-
-              {wallet.data ? (
-                <>
-                  {wallet.data.permissions.canWithdraw || wallet.data.permissions.canTrade ? (
-                    <p className="alert alert--error" style={{ marginBottom: '1rem' }}>
-                      <ShieldCheck size={15} aria-hidden="true" />
-                      This API key can trade and withdraw. The portal only ever reads from Binance, but
-                      restrict the key to “Enable Reading” so a leaked secret cannot move funds.
-                    </p>
-                  ) : (
-                    <p className="alert alert--success" style={{ marginBottom: '1rem' }}>
-                      <ShieldCheck size={15} aria-hidden="true" />
-                      Key is read-only — no trading or withdrawal permission.
-                    </p>
-                  )}
-
-                  <div className="dash-grid">
-                    <Tile
-                      icon={Wallet}
-                      label="Funded assets"
-                      value={wallet.data.balances.length}
-                      tone={wallet.data.balances.length > 0 ? 'emerald' : 'amber'}
-                    />
-                    <Tile
-                      icon={Bitcoin}
-                      label="Deposits on record"
-                      value={wallet.data.deposits.length}
-                    />
-                  </div>
-
-                  {wallet.data.balances.length > 0 ? (
-                    <div className="table-wrap" style={{ marginTop: '1rem' }}>
-                      <table className="table">
-                        <caption>Spot wallet balances</caption>
-                        <thead>
-                          <tr>
-                            <th scope="col">Asset</th>
-                            <th scope="col">Free</th>
-                            <th scope="col">Locked</th>
-                            <th scope="col">Total</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {wallet.data.balances.map((balance) => (
-                            <tr key={balance.asset}>
-                              <th scope="row">{balance.asset}</th>
-                              <td>{balance.free}</td>
-                              <td>{balance.locked}</td>
-                              <td>{balance.total}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  ) : null}
-
-                  <div className="btn-row" style={{ marginTop: '1rem' }}>
-                    <Link className="btn btn-secondary btn-sm" to="/payments">
-                      <Wallet size={14} aria-hidden="true" />
-                      Open payments
-                    </Link>
-                  </div>
-                </>
-              ) : null}
             </section>
 
             <section className="dash-section">

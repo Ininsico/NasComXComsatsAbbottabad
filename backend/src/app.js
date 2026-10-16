@@ -9,6 +9,7 @@ import authRoutes from './routes/auth.js';
 import campusRoutes from './routes/campus.js';
 import documentRoutes from './routes/documents.js';
 import paymentRoutes from './routes/payments.js';
+import profileRoutes from './routes/profile.js';
 
 export function createApp() {
   const app = express();
@@ -42,6 +43,7 @@ export function createApp() {
   app.use('/api/admin', adminRoutes);
   app.use('/api/assistant', assistantRoutes);
   app.use('/api/payments', paymentRoutes);
+  app.use('/api/profile', profileRoutes);
 
   app.use((req, res) => {
     res.status(404).json({ error: `Not found: ${req.method} ${req.originalUrl}` });
