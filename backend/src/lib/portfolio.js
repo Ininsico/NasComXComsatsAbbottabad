@@ -1,6 +1,6 @@
 import { config } from '../config.js';
 import { CREDITED_STATUSES } from '../data/plans.js';
-import { accountBalances, depositHistory, tickerPrices } from './binance.js';
+import { accountBalances, depositHistory, fundingWallet, tickerPrices } from './binance.js';
 import { listIntents } from './payments.js';
 
 const STABLECOINS = new Set(['USDT', 'USDC', 'BUSD', 'FDUSD', 'DAI', 'TUSD']);
@@ -48,8 +48,9 @@ export async function loadPortfolio() {
   }
 
   try {
-    const [account, deposits, prices] = await Promise.all([
+    const [account, funding, deposits, prices] = await Promise.all([
       accountBalances(),
+      fundingWallet().catch(() => []),
       depositHistory({ coin: config.binance.coin, limit: 100 }),
       tickerPrices().catch(() => []),
     ]);
@@ -64,34 +65,38 @@ export async function loadPortfolio() {
       return Number.isFinite(price) ? price : null;
     };
 
-    const holdings = account.balances
-      .map((balance) => {
-        const free = Number(balance.free);
-        const locked = Number(balance.locked);
-        const total = free + locked;
-        const price = priceFor(balance.asset);
+    const toHolding = (asset, free, locked, wallet) => ({
+      asset,
+      wallet,
+      free,
+      locked,
+      total: free + locked,
+      price: priceFor(asset),
+      value: priceFor(asset) === null ? null : round((free + locked) * priceFor(asset)),
+    });
 
-        return {
-          asset: balance.asset,
-          free,
-          locked,
-          total,
-          price,
-          value: price === null ? null : round(total * price),
-        };
+    const spotHoldings = account.balances
+      .map((balance) => toHolding(balance.asset, Number(balance.free), Number(balance.locked), 'spot'))
+      .filter((holding) => holding.total > 0);
+
+    const fundingHoldings = (Array.isArray(funding) ? funding : [])
+      .map((asset) => {
+        const free = Number(asset.free ?? 0) + Number(asset.freeze ?? 0) + Number(asset.withdrawing ?? 0);
+        return toHolding(asset.asset, free, Number(asset.locked ?? 0), 'funding');
       })
-      .filter((holding) => holding.total > 0)
-      .sort((a, b) => (b.value ?? 0) - (a.value ?? 0));
+      .filter((holding) => holding.total > 0);
+
+    const holdings = [...spotHoldings, ...fundingHoldings].sort(
+      (a, b) => (b.value ?? 0) - (a.value ?? 0),
+    );
 
     const depositList = (Array.isArray(deposits) ? deposits : []).filter((deposit) =>
       CREDITED_STATUSES.has(Number(deposit.status)),
     );
 
-    const walletValue = holdings.reduce((total, holding) => total + (holding.value ?? 0), 0);
-    const depositsReceived = depositList.reduce(
-      (total, deposit) => total + Number(deposit.amount),
-      0,
-    );
+    const valueOf = (list) => list.reduce((total, holding) => total + (holding.value ?? 0), 0);
+    const spotValue = valueOf(spotHoldings);
+    const fundingValue = valueOf(fundingHoldings);
 
     return {
       available: true,
@@ -104,10 +109,13 @@ export async function loadPortfolio() {
         canDeposit: account.canDeposit,
       },
       totals: {
-        walletValue: round(walletValue),
-        depositsReceived: round(depositsReceived),
+        walletValue: round(spotValue + fundingValue),
+        spotValue: round(spotValue),
+        fundingValue: round(fundingValue),
+        depositsReceived: round(
+          depositList.reduce((total, deposit) => total + Number(deposit.amount), 0),
+        ),
         subscriptionRevenue: subscriptions.revenue,
-        portfolioValue: round(walletValue),
       },
       holdings,
       unpriced: holdings.filter((holding) => holding.value === null).map((holding) => holding.asset),

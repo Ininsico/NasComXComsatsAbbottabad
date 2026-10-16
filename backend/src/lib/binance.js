@@ -60,6 +60,47 @@ export function accountBalances() {
   return signedGet('/api/v3/account');
 }
 
+/**
+ * Read-only: the Funding wallet, which is where crypto deposits actually land.
+ * Binance only exposes this one as a POST, so it is signed and sent as a form
+ * body. It is still a read — there is no order, transfer or withdrawal path here.
+ */
+export async function fundingWallet() {
+  if (!config.binance.configured) {
+    throw new Error('Binance is not configured');
+  }
+
+  const query = new URLSearchParams({
+    recvWindow: '5000',
+    timestamp: String(Date.now()),
+  }).toString();
+
+  let response;
+
+  try {
+    response = await fetch(`${config.binance.baseUrl}/sapi/v3/asset/getUserAsset`, {
+      method: 'POST',
+      headers: {
+        'X-MBX-APIKEY': config.binance.apiKey,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: `${query}&signature=${sign(query)}`,
+    });
+  } catch {
+    throw new Error('Binance is unreachable from this server');
+  }
+
+  const payload = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    const error = new Error(payload?.msg ?? `Binance replied with status ${response.status}`);
+    error.binanceCode = payload?.code ?? null;
+    throw error;
+  }
+
+  return payload;
+}
+
 /** Read-only: deposit history for one coin. */
 export function depositHistory({ coin, startTime, limit = 100 } = {}) {
   const params = { limit: String(limit) };

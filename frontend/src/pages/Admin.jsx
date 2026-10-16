@@ -122,11 +122,13 @@ function Portfolio({ portfolio }) {
       <div className="table-wrap" style={{ marginTop: '1rem' }}>
         <table className="table">
           <caption>
-            Holdings valued in {portfolio.asset} · priced live from the Binance ticker
+            Spot {usdt(totals.spotValue)} + Funding {usdt(totals.fundingValue)} · marked to market
+            with the Binance ticker
           </caption>
           <thead>
             <tr>
               <th scope="col">Asset</th>
+              <th scope="col">Wallet</th>
               <th scope="col">Free</th>
               <th scope="col">Locked</th>
               <th scope="col">Price ({portfolio.asset})</th>
@@ -136,14 +138,17 @@ function Portfolio({ portfolio }) {
           <tbody>
             {portfolio.holdings.length === 0 ? (
               <tr>
-                <td colSpan={5} className="muted">
-                  No funds in the spot wallet yet — the portfolio is {usdt(0)}.
+                <td colSpan={6} className="muted">
+                  No funds in the spot or funding wallet yet — the portfolio is {usdt(0)}.
                 </td>
               </tr>
             ) : (
               portfolio.holdings.map((holding) => (
-                <tr key={holding.asset}>
+                <tr key={`${holding.wallet}-${holding.asset}`}>
                   <th scope="row">{holding.asset}</th>
+                  <td>
+                    <span className="pill pill--neutral">{holding.wallet}</span>
+                  </td>
                   <td>{holding.free}</td>
                   <td>{holding.locked}</td>
                   <td>{holding.price === null ? '—' : holding.price}</td>
@@ -153,7 +158,7 @@ function Portfolio({ portfolio }) {
             )}
             <tr>
               <th scope="row">Total portfolio value</th>
-              <td colSpan={3} />
+              <td colSpan={4} />
               <td>
                 <span className="pill pill--done">{usdt(totals.walletValue)}</span>
               </td>
