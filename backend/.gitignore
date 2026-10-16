@@ -6,9 +6,11 @@ node_modules/
 .env.*
 !.env.example
 
-# Runtime data (JSON user store, uploads)
+# Runtime data (JSON stores, uploads, WhatsApp artefacts)
 data/*.json
+data/*.png
 !data/.gitkeep
+data/whatsapp-session/
 uploads/
 
 # Logs

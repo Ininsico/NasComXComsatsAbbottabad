@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { requireAuth, requireRole } from '../lib/auth.js';
 import {
+  logoutWhatsApp,
   sendWhatsAppMessage,
   startWhatsApp,
   stopWhatsApp,
@@ -26,6 +27,11 @@ router.post('/start', async (req, res) => {
 
 router.post('/stop', async (req, res) => {
   res.json(await stopWhatsApp());
+});
+
+/** Forget the stored session; the next start needs a fresh scan. */
+router.post('/logout', async (req, res) => {
+  res.json(await logoutWhatsApp());
 });
 
 router.post('/send', async (req, res) => {

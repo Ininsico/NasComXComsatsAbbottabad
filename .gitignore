@@ -36,6 +36,7 @@ backend/uploads/
 # RAG vector store and WhatsApp session
 AI/data/
 backend/data/whatsapp-session/
+backend/data/whatsapp-qr.png
 
 # Test / coverage
 coverage/

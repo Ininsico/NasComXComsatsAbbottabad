@@ -267,12 +267,33 @@ exercised from Python alone.
 
 ## WhatsApp assistant
 
-`whatsapp-web.js` runs inside the API. The admin console boots the client, renders the pairing QR
-(the session is stored on disk, so it is scanned once), and reports connection state and message
-counts. Incoming messages are answered from the same RAG pipeline: the sender's number is matched
-against member profile phone numbers, so a reply is grounded in that member's own vector space plus
-the shared campus one. An unknown number still gets an isolated namespace, so it can ask campus
-questions without ever reaching another member's documents.
+`whatsapp-web.js` runs inside the API. Incoming messages are answered from the same RAG pipeline:
+the sender's number is matched against member profile phone numbers, so a reply is grounded in that
+member's own vector space plus the shared campus one. An unknown number still gets an isolated
+namespace, so it can ask campus questions without ever reaching another member's documents.
+
+### Linking a device (once)
+
+```bash
+npm --prefix backend run whatsapp:pair     # prints a scannable QR, waits for the scan
+npm --prefix backend run whatsapp:status   # is a session stored, and does it still connect?
+npm --prefix backend run whatsapp:logout -- --yes   # forget it and re-pair
+```
+
+`whatsapp:pair` renders the QR in the terminal **and** writes `backend/data/whatsapp-qr.png` if the
+terminal code is awkward to scan. The admin console shows the same QR, so either route works.
+
+Once linked, a marker is written next to the session and the API auto-connects on every boot with no
+scan, reusing the stored device registration. `whatsapp:status` is the honest check: it actually
+connects, so a session that has been revoked by WhatsApp reports `NOT paired` rather than pretending.
+
+The session lives in `backend/data/whatsapp-session/` (~100 MB Chromium profile) and is gitignored.
+**Treat those files as credentials** — they are enough to connect as that WhatsApp account — so never
+commit them, paste them into a chat, or copy them anywhere untrusted. `whatsapp:logout` deletes them.
+
+> Auto-start only happens when a linked session exists, so `whatsapp:pair` never has to compete with
+> the running API for the same browser profile. Set `WHATSAPP_ENABLED=true` only to force a client
+> with no session yet.
 
 ## Data storage
 

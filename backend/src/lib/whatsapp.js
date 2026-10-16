@@ -1,4 +1,10 @@
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { rm, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { config } from '../config.js';
+
+/** Written after a successful link; its presence is what "already paired" means. */
+const MARKER = () => join(config.whatsapp.sessionPath, '.linked.json');
 
 const state = {
   status: 'stopped',
@@ -21,8 +27,93 @@ export function whatsappStatus() {
   return {
     enabled: config.whatsapp.enabled,
     sessionPath: config.whatsapp.sessionPath,
+    session: sessionInfo(),
     ...state,
   };
+}
+
+/**
+ * What is on disk for this session.
+ *
+ * `paired` is driven by a marker written only once the client reaches `ready`,
+ * so it is exact: a stored profile that was never linked does not count, and a
+ * linked one always does. That lets the API reconnect on boot with no scan while
+ * staying out of the way before the first link.
+ */
+export function sessionInfo() {
+  const base = join(config.whatsapp.sessionPath, 'session-comsats-portal');
+
+  let linked = null;
+
+  try {
+    linked = JSON.parse(readFileSync(MARKER(), 'utf8'));
+  } catch {
+    linked = null;
+  }
+
+  if (!existsSync(base)) {
+    return {
+      present: false,
+      paired: false,
+      path: base,
+      files: 0,
+      megabytes: 0,
+      updatedAt: null,
+      linkedDevice: null,
+      linkedAt: null,
+    };
+  }
+
+  let files = 0;
+  let bytes = 0;
+
+  const walk = (directory) => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const full = join(directory, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else {
+        files += 1;
+        try {
+          bytes += statSync(full).size;
+        } catch {
+          // file vanished mid-walk
+        }
+      }
+    }
+  };
+
+  try {
+    walk(base);
+  } catch {
+    // unreadable profile
+  }
+
+  return {
+    present: true,
+    paired: linked !== null,
+    path: base,
+    files,
+    megabytes: Math.round((bytes / 1024 / 1024) * 10) / 10,
+    updatedAt: statSync(base).mtime.toISOString(),
+    linkedDevice: linked?.me ?? null,
+    linkedAt: linked?.linkedAt ?? null,
+  };
+}
+
+/** Stops the client and deletes the stored session, so the next start re-pairs. */
+export async function logoutWhatsApp() {
+  await stopWhatsApp();
+
+  await rm(join(config.whatsapp.sessionPath, 'session-comsats-portal'), {
+    recursive: true,
+    force: true,
+  });
+  await rm(MARKER(), { force: true });
+
+  state.me = null;
+  state.readyAt = null;
+
+  return whatsappStatus();
 }
 
 export function setWhatsAppHandler(next) {
@@ -95,11 +186,24 @@ export async function startWhatsApp() {
       state.qrDataUrl = null;
     });
 
-    client.on('ready', () => {
+    client.on('ready', async () => {
       state.status = 'ready';
+      state.qr = null;
+      state.qrDataUrl = null;
       state.me = client?.info?.wid?._serialized ?? null;
       state.readyAt = new Date().toISOString();
       console.log(`[whatsapp] connected as ${state.me}`);
+
+      // Record that this profile is linked, so later boots reconnect without a scan.
+      try {
+        await writeFile(
+          MARKER(),
+          JSON.stringify({ me: state.me, linkedAt: state.readyAt }, null, 2),
+          'utf8',
+        );
+      } catch (error) {
+        console.error(`[whatsapp] could not record the session marker: ${error.message}`);
+      }
     });
 
     client.on('auth_failure', (message) => {

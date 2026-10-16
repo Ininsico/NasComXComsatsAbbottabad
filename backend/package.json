@@ -8,7 +8,10 @@
   "scripts": {
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
-    "seed": "node src/seed.js"
+    "seed": "node src/seed.js",
+    "whatsapp:pair": "node src/scripts/whatsapp.js pair",
+    "whatsapp:status": "node src/scripts/whatsapp.js status",
+    "whatsapp:logout": "node src/scripts/whatsapp.js logout"
   },
   "keywords": [
     "school-management",
@@ -26,6 +29,7 @@
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.4.0",
     "qrcode": "^1.5.4",
+    "qrcode-terminal": "^0.12.0",
     "whatsapp-web.js": "^1.34.7"
   }
 }
