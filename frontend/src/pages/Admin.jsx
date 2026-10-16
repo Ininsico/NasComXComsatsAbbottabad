@@ -11,6 +11,7 @@ import {
   FileText,
   GraduationCap,
   HardDrive,
+  MessageCircle,
   RefreshCw,
   ShieldCheck,
   TrendingUp,
@@ -18,10 +19,11 @@ import {
   Users,
   Wallet,
 } from 'lucide-react';
-import { useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import AsyncSection from '../components/AsyncSection.jsx';
 import { useAuth } from '../context/authContext.js';
+import { useToast } from '../context/toastContext.js';
 import { ROLE_LABELS } from '../data/site.js';
 import useApiResource from '../hooks/useApiResource.js';
 import { api } from '../lib/api.js';
@@ -262,10 +264,179 @@ function Portfolio({ portfolio }) {
   );
 }
 
+const WA_TONES = {
+  ready: 'pill--done',
+  authenticated: 'pill--done',
+  qr: 'pill--pending',
+  starting: 'pill--info',
+  error: 'pill--problem',
+  disconnected: 'pill--problem',
+};
+
+const WA_LABELS = {
+  ready: 'Connected',
+  authenticated: 'Authenticated',
+  qr: 'Scan the QR code',
+  starting: 'Starting…',
+  stopped: 'Stopped',
+  error: 'Error',
+  disconnected: 'Disconnected',
+  unknown: 'Unknown',
+};
+
+function WhatsApp({ wa, busy, onRefresh, onAction, test, onTestChange, onSend }) {
+  const tone = WA_TONES[wa.status] ?? 'pill--neutral';
+
+  return (
+    <>
+      <div className="btn-row" style={{ marginBottom: '1rem' }}>
+        <span className={`pill ${tone}`}>
+          <MessageCircle size={12} aria-hidden="true" />
+          {WA_LABELS[wa.status] ?? wa.status}
+        </span>
+        {wa.me ? <span className="pill pill--neutral">{wa.me}</span> : null}
+        <span className="pill pill--neutral">received {wa.received ?? 0}</span>
+        <span className="pill pill--neutral">replied {wa.replied ?? 0}</span>
+      </div>
+
+      {wa.error ? (
+        <p className="alert alert--error" style={{ marginBottom: '1rem' }}>
+          <TriangleAlert size={15} aria-hidden="true" />
+          {wa.error}
+        </p>
+      ) : null}
+
+      <div className="btn-row">
+        <button type="button" className="btn btn-primary btn-sm" onClick={() => onAction('start')} disabled={busy}>
+          <MessageCircle size={14} aria-hidden="true" />
+          {busy ? 'Working…' : 'Start / link WhatsApp'}
+        </button>
+        <button type="button" className="btn btn-secondary btn-sm" onClick={() => onAction('stop')} disabled={busy}>
+          Stop
+        </button>
+        <button type="button" className="btn btn-ghost btn-sm" onClick={onRefresh} disabled={busy}>
+          <RefreshCw size={14} aria-hidden="true" />
+          Refresh
+        </button>
+      </div>
+
+      {wa.qrDataUrl ? (
+        <div className="wa-qr" style={{ marginTop: '1rem' }}>
+          <span className="label-micro">Scan with WhatsApp → Linked devices</span>
+          <img src={wa.qrDataUrl} alt="WhatsApp pairing QR code" />
+          <p className="hint" style={{ margin: 0 }}>
+            The session is saved to disk, so this is only needed once.
+          </p>
+        </div>
+      ) : null}
+
+      <form className="doc-upload" style={{ marginTop: '1.25rem' }} onSubmit={onSend}>
+        <div className="field">
+          <label htmlFor="wa-to">Send a test message to</label>
+          <input
+            id="wa-to"
+            className="input"
+            value={test.to}
+            onChange={(event) => onTestChange({ ...test, to: event.target.value })}
+            placeholder="923001234567"
+          />
+        </div>
+        <div className="field">
+          <label htmlFor="wa-text">Message</label>
+          <input
+            id="wa-text"
+            className="input"
+            value={test.text}
+            onChange={(event) => onTestChange({ ...test, text: event.target.value })}
+            placeholder="Test from the campus portal"
+          />
+        </div>
+        <button type="submit" className="btn btn-secondary" disabled={busy}>
+          Send
+        </button>
+      </form>
+
+      <p className="hint" style={{ marginTop: '0.75rem' }}>
+        Incoming messages are answered from the RAG pipeline: the sender&apos;s number is matched to a
+        member profile, and the reply is grounded in that member&apos;s own vector space plus the
+        shared campus one.
+      </p>
+    </>
+  );
+}
+
 export default function Admin() {
   const { token } = useAuth();
+  const { showToast } = useToast();
   const loadOverview = useCallback(() => api.adminOverview(token), [token]);
   const { data, error, loading, reload } = useApiResource(loadOverview);
+
+  const [wa, setWa] = useState({ status: 'unknown' });
+  const [waBusy, setWaBusy] = useState(false);
+  const [waTest, setWaTest] = useState({ to: '', text: '' });
+
+  const refreshWhatsApp = useCallback(async () => {
+    try {
+      setWa(await api.whatsappStatus(token));
+    } catch (statusError) {
+      setWa({ status: 'error', error: statusError.message });
+    }
+  }, [token]);
+
+  useEffect(() => {
+    let active = true;
+
+    api
+      .whatsappStatus(token)
+      .then((status) => {
+        if (active) setWa(status);
+      })
+      .catch((statusError) => {
+        if (active) setWa({ status: 'error', error: statusError.message });
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [token]);
+
+  // While the client is booting or waiting for a scan, keep the QR fresh.
+  useEffect(() => {
+    if (!['starting', 'qr'].includes(wa.status)) return undefined;
+
+    const id = setInterval(() => {
+      void refreshWhatsApp();
+    }, 4000);
+
+    return () => clearInterval(id);
+  }, [wa.status, refreshWhatsApp]);
+
+  async function handleWhatsAppAction(action) {
+    setWaBusy(true);
+
+    try {
+      setWa(action === 'start' ? await api.whatsappStart(token) : await api.whatsappStop(token));
+    } catch (actionError) {
+      setWa({ status: 'error', error: actionError.message });
+    } finally {
+      setWaBusy(false);
+    }
+  }
+
+  async function handleWhatsAppSend(event) {
+    event.preventDefault();
+    setWaBusy(true);
+
+    try {
+      const result = await api.whatsappSend(token, waTest.to.trim(), waTest.text.trim());
+      showToast({ tone: 'success', title: 'Message sent', message: `Queued to ${result.to}.` });
+      setWaTest({ to: '', text: '' });
+    } catch (sendError) {
+      showToast({ tone: 'error', title: 'Could not send', message: sendError.message });
+    } finally {
+      setWaBusy(false);
+    }
+  }
 
   return (
     <>
@@ -513,6 +684,19 @@ export default function Admin() {
                   </table>
                 </div>
               )}
+            </section>
+
+            <section className="dash-section">
+              <SectionTitle icon={MessageCircle}>WhatsApp assistant</SectionTitle>
+              <WhatsApp
+                wa={wa}
+                busy={waBusy}
+                onRefresh={refreshWhatsApp}
+                onAction={handleWhatsAppAction}
+                test={waTest}
+                onTestChange={setWaTest}
+                onSend={handleWhatsAppSend}
+              />
             </section>
 
             <section className="dash-section">

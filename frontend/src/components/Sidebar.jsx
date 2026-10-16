@@ -1,6 +1,7 @@
 import {
   ChevronsLeft,
   ChevronsRight,
+  Database,
   FileText,
   LayoutDashboard,
   LogOut,
@@ -16,6 +17,7 @@ import { ADMIN_ROLE, ROLE_LABELS } from '../data/site.js';
 const PORTAL_LINKS = [
   { to: '/dashboard', label: 'Overview', icon: LayoutDashboard },
   { to: '/profile', label: 'My profile', icon: UserRound },
+  { to: '/knowledge', label: 'Knowledge', icon: Database },
   { to: '/documents', label: 'Documents', icon: FileText },
   { to: '/payments', label: 'Payments', icon: Wallet },
 ];
@@ -23,6 +25,7 @@ const PORTAL_LINKS = [
 /** Admins land on the console, so Overview would only bounce them there. */
 const ADMIN_PORTAL_LINKS = [
   { to: '/profile', label: 'My profile', icon: UserRound },
+  { to: '/knowledge', label: 'Knowledge', icon: Database },
   { to: '/documents', label: 'Documents', icon: FileText },
   { to: '/payments', label: 'Payments', icon: Wallet },
 ];

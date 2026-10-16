@@ -2,6 +2,7 @@
   "name": "comsats-abbottabad",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "description": "School management website for COMSATS Abbottabad — React (Vite) frontend and Express auth API.",
   "scripts": {
     "install:all": "npm --prefix frontend install && npm --prefix backend install",
@@ -9,7 +10,8 @@
     "dev:backend": "npm --prefix backend run dev",
     "build:frontend": "npm --prefix frontend run build",
     "lint:frontend": "npm --prefix frontend run lint",
-    "start:backend": "npm --prefix backend start"
+    "start:backend": "npm --prefix backend start",
+    "chroma": "chroma run --path ./AI/data/chroma --port 8000"
   },
   "license": "MIT"
 }

@@ -34,9 +34,14 @@ export default function AssistantCard() {
     setAnswer(null);
 
     try {
-      const result = await api.ask(token, value);
+      const result = await api.aiAsk(token, value);
       setQuestion(value);
-      setAnswer({ text: result.answer, model: result.model });
+      setAnswer({
+        text: result.answer,
+        model: result.model,
+        retrieved: result.retrieved ?? 0,
+        sources: result.sources ?? [],
+      });
     } catch (error) {
       showToast({ tone: 'error', title: 'Assistant unavailable', message: error.message });
     } finally {
@@ -98,7 +103,21 @@ export default function AssistantCard() {
       {answer ? (
         <div className="assistant__answer" role="status">
           <p>{answer.text}</p>
-          <span className="hint">Answered by {answer.model} · served through Groq</span>
+          <span className="hint">
+            {answer.model} · retrieved {answer.retrieved} passage(s) from your knowledge space
+          </span>
+          {answer.sources.length > 0 ? (
+            <ul className="knowledge-sources">
+              {answer.sources.map((source) => (
+                <li key={`${source.title}-${source.scope}`}>
+                  <span className={`pill ${source.scope === 'campus' ? 'pill--info' : 'pill--done'}`}>
+                    {source.scope}
+                  </span>
+                  {source.title}
+                </li>
+              ))}
+            </ul>
+          ) : null}
         </div>
       ) : null}
     </section>

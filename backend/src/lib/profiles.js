@@ -171,3 +171,30 @@ export function profileCompleteness(profile) {
     ],
   };
 }
+
+const digitsOf = (value) => String(value ?? '').replace(/\D/g, '');
+
+/**
+ * Resolve a WhatsApp number to a member, so their messages land in their own
+ * vector space. Matching uses the last 10 digits, which tolerates country-code
+ * and formatting differences between a profile and a WhatsApp sender id.
+ */
+export async function findProfileByPhone(phone) {
+  const needle = digitsOf(phone);
+
+  if (needle.length < 7) return null;
+
+  const profiles = await readAll();
+
+  for (const profile of profiles) {
+    const candidate = digitsOf(profile.phone);
+
+    if (candidate.length < 7) continue;
+
+    const compare = Math.min(candidate.length, needle.length, 10);
+
+    if (candidate.slice(-compare) === needle.slice(-compare)) return profile;
+  }
+
+  return null;
+}

@@ -58,6 +58,7 @@ has an **instant login dropdown** so you can jump straight into any of them.
 | `/admin`      | Admin console: accounts, student records, files, integrations      |
 | `/payments`   | Subscription plans and crypto deposits, confirmed automatically    |
 | `/profile`    | Member profile: contact, guardian details and a Cloudinary photo    |
+| `/knowledge`  | The member's own RAG space: ask, index documents, inspect namespaces |
 
 ## Getting started
 
@@ -115,6 +116,15 @@ Base URL: `http://localhost:4000`
 | GET    | `/api/profile`              | Bearer | —                                  | profile + completeness |
 | PUT    | `/api/profile`              | Bearer | profile fields + `name`            | updated profile       |
 | POST   | `/api/profile/avatar`       | Bearer | `multipart` (`file`, image)        | `{ profile }`         |
+| GET    | `/api/ai/namespace`         | Bearer | —                                  | namespaces + live backend |
+| POST   | `/api/ai/documents`         | Bearer | `{ title, text }`                  | `{ document }`        |
+| DELETE | `/api/ai/documents/:sourceId` | Bearer | —                                | `{ removed }`         |
+| POST   | `/api/ai/ask`               | Bearer | `{ question }`                     | `{ answer, sources }` |
+| GET    | `/api/ai/retrieve`          | Bearer | `?q=`                              | retrieved passages    |
+| GET    | `/api/whatsapp/status`      | Admin  | —                                  | client state + QR     |
+| POST   | `/api/whatsapp/start`       | Admin  | —                                  | boots the WhatsApp client |
+| POST   | `/api/whatsapp/stop`        | Admin  | —                                  | stops it              |
+| POST   | `/api/whatsapp/send`        | Admin  | `{ to, text }`                     | sends a message       |
 
 Validation failures return `400` with a per-field `fields` object. Duplicate emails return `409`,
 bad credentials `401`. Passwords are hashed with bcrypt and never leave the API; sessions use signed
@@ -213,6 +223,36 @@ date of birth, address and city, guardian name and phone, programme and section,
 profile photo; their name is written back to the account record. Facts the registrar owns —
 registration number, semester, advisor, department — are shown read-only alongside it. Photos upload
 to the same Cloudinary account (up to 8 MB) and the secure URL is stored on the profile.
+
+## Retrieval-augmented AI
+
+`AI/` is a self-contained RAG pipeline with no dependencies of its own — see `AI/README.md`.
+**Chroma** is the vector database and every namespace is its own collection, so a member's
+documents live in a genuinely separate vector space rather than being filtered at query time.
+
+| Namespace       | Holds                             | Who can retrieve it |
+| --------------- | --------------------------------- | ------------------- |
+| `shared:campus` | programmes, faculty, policies      | everyone            |
+| `user:<id>`     | one member's own documents         | that member only    |
+| `wa:<number>`   | an unrecognised WhatsApp sender's  | that sender only    |
+
+```bash
+pip install chromadb
+npm run chroma          # chroma run --path ./AI/data/chroma --port 8000
+```
+
+If the CLI is not on PATH (pip can install it under your user profile), call `chroma.exe`
+directly. When Chroma is unreachable the backend falls back to a bundled vector store, logs why, and
+the `/knowledge` page shows which backend is actually serving.
+
+## WhatsApp assistant
+
+`whatsapp-web.js` runs inside the API. The admin console boots the client, renders the pairing QR
+(the session is stored on disk, so it is scanned once), and reports connection state and message
+counts. Incoming messages are answered from the same RAG pipeline: the sender's number is matched
+against member profile phone numbers, so a reply is grounded in that member's own vector space plus
+the shared campus one. An unknown number still gets an isolated namespace, so it can ask campus
+questions without ever reaching another member's documents.
 
 ## Data storage
 

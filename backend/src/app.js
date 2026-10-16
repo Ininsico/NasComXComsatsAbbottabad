@@ -4,12 +4,14 @@ import { config } from './config.js';
 import { countDemoAccounts, DEMO_ACCOUNT_COUNT } from './lib/seed.js';
 import accountRoutes from './routes/account.js';
 import adminRoutes from './routes/admin.js';
+import aiRoutes from './routes/ai.js';
 import assistantRoutes from './routes/assistant.js';
 import authRoutes from './routes/auth.js';
 import campusRoutes from './routes/campus.js';
 import documentRoutes from './routes/documents.js';
 import paymentRoutes from './routes/payments.js';
 import profileRoutes from './routes/profile.js';
+import whatsappRoutes from './routes/whatsapp.js';
 
 export function createApp() {
   const app = express();
@@ -44,6 +46,8 @@ export function createApp() {
   app.use('/api/assistant', assistantRoutes);
   app.use('/api/payments', paymentRoutes);
   app.use('/api/profile', profileRoutes);
+  app.use('/api/ai', aiRoutes);
+  app.use('/api/whatsapp', whatsappRoutes);
 
   app.use((req, res) => {
     res.status(404).json({ error: `Not found: ${req.method} ${req.originalUrl}` });

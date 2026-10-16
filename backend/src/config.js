@@ -1,8 +1,23 @@
 import 'dotenv/config';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const here = dirname(fileURLToPath(import.meta.url));
+const backendDir = join(here, '..');
 
 const toInt = (value, fallback) => {
   const parsed = Number.parseInt(value ?? '', 10);
   return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const toFloat = (value, fallback) => {
+  const parsed = Number.parseFloat(value ?? '');
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const toBool = (value, fallback = false) => {
+  if (value === undefined) return fallback;
+  return String(value).toLowerCase() === 'true';
 };
 
 const stripSlash = (value) => value.replace(/\/+$/, '');
@@ -48,6 +63,20 @@ export const config = {
   payments: {
     tolerancePercent: Number(process.env.PAYMENT_TOLERANCE_PERCENT ?? 10),
     pollSeconds: Number(process.env.PAYMENT_POLL_SECONDS ?? 30),
+  },
+  rag: {
+    topK: toInt(process.env.RAG_TOP_K, 4),
+    minScore: toFloat(process.env.RAG_MIN_SCORE, 0.05),
+    chromaUrl: process.env.CHROMA_URL ?? 'http://localhost:8000',
+    useChroma: toBool(process.env.RAG_USE_CHROMA, true),
+    dataDir: process.env.RAG_DATA_DIR ?? '',
+  },
+  whatsapp: {
+    enabled: toBool(process.env.WHATSAPP_ENABLED, false),
+    sessionPath: process.env.WHATSAPP_SESSION_PATH ?? join(backendDir, 'data', 'whatsapp-session'),
+    chromePath: process.env.WHATSAPP_CHROME_PATH ?? '',
+    replyToGroups: toBool(process.env.WHATSAPP_REPLY_TO_GROUPS, false),
+    allowUnknown: toBool(process.env.WHATSAPP_ALLOW_UNKNOWN, true),
   },
 };
 

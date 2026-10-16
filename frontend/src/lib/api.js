@@ -104,4 +104,20 @@ export const api = {
 
     return requestForm('/api/profile/avatar', token, form);
   },
+
+  aiNamespace: (token) => request('/api/ai/namespace', { token }),
+  aiIngest: (token, details) =>
+    request('/api/ai/documents', { method: 'POST', body: details, token }),
+  aiRemove: (token, sourceId) =>
+    request(`/api/ai/documents/${encodeURIComponent(sourceId)}`, { method: 'DELETE', token }),
+  aiAsk: (token, question) =>
+    request('/api/ai/ask', { method: 'POST', body: { question }, token }),
+  aiRetrieve: (token, question) =>
+    request(`/api/ai/retrieve?q=${encodeURIComponent(question)}`, { token }),
+
+  whatsappStatus: (token) => request('/api/whatsapp/status', { token }),
+  whatsappStart: (token) => request('/api/whatsapp/start', { method: 'POST', token }),
+  whatsappStop: (token) => request('/api/whatsapp/stop', { method: 'POST', token }),
+  whatsappSend: (token, to, text) =>
+    request('/api/whatsapp/send', { method: 'POST', body: { to, text }, token }),
 };

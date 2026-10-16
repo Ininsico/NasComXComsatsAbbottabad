@@ -13,6 +13,7 @@ import Dashboard from './pages/Dashboard.jsx';
 import Documents from './pages/Documents.jsx';
 import Faculty from './pages/Faculty.jsx';
 import Home from './pages/Home.jsx';
+import Knowledge from './pages/Knowledge.jsx';
 import Login from './pages/Login.jsx';
 import NotFound from './pages/NotFound.jsx';
 import Payments from './pages/Payments.jsx';
@@ -53,6 +54,7 @@ export default function App() {
         >
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="profile" element={<Profile />} />
+          <Route path="knowledge" element={<Knowledge />} />
           <Route path="documents" element={<Documents />} />
           <Route path="payments" element={<Payments />} />
           <Route

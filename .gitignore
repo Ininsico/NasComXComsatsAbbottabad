@@ -33,6 +33,10 @@ lerna-debug.log*
 backend/data/*.json
 backend/uploads/
 
+# RAG vector store and WhatsApp session
+AI/data/
+backend/data/whatsapp-session/
+
 # Test / coverage
 coverage/
 .nyc_output/

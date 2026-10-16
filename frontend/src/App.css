@@ -1612,6 +1612,52 @@
   grid-column: 1 / -1;
 }
 
+/* Knowledge base ------------------------------------------------------- */
+
+.knowledge-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 1.25rem;
+  align-items: start;
+}
+
+.knowledge-sources {
+  display: grid;
+  gap: 0.375rem;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.knowledge-sources li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.75rem;
+  color: var(--slate-600);
+}
+
+/* WhatsApp ------------------------------------------------------------- */
+
+.wa-qr {
+  display: grid;
+  place-items: center;
+  gap: 0.75rem;
+  padding: 1.25rem;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--r-2xl);
+  background: var(--surface-2);
+}
+
+.wa-qr img {
+  width: 240px;
+  height: 240px;
+  border-radius: var(--r-xl);
+  background: #fff;
+  padding: 0.5rem;
+}
+
 .sidebar__collapse {
   display: grid;
   place-items: center;
