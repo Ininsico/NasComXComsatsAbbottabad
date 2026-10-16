@@ -1,15 +1,19 @@
 import { createChromaStore } from './chromaStore.js';
+import { resolveEmbedder } from './embedders.js';
 import { createVectorStore, DEFAULT_DATA_DIR } from './vectorStore.js';
 
 /**
- * Picks the vector backend at first use.
+ * Picks the embedding model and the vector backend on first use.
  *
- * Chroma is preferred when a URL is configured and the server answers a
- * heartbeat; otherwise the built-in store keeps the pipeline working. The chosen
- * backend is reported so the UI can show which one is live.
+ * Embeddings are semantic (the Python service) when it is running, otherwise
+ * hashed. The collection prefix follows the embedder, so semantic and hashed
+ * vectors never land in the same collection — switching models cannot corrupt
+ * an existing index, it just starts a new one.
  */
 export function createAdaptiveStore({
   chromaUrl,
+  semanticUrl,
+  preferSemantic = true,
   dataDir = DEFAULT_DATA_DIR,
   chunkOptions,
   ChromaClient,
@@ -20,14 +24,29 @@ export function createAdaptiveStore({
   async function active() {
     if (resolved) return resolved;
 
-    let fallbackReason = 'No Chroma URL configured';
+    const embedder = await resolveEmbedder({
+      semanticUrl,
+      preferSemantic,
+      onFallback: (error) => {
+        onFallback?.(new Error(`semantic embeddings unavailable (${error.message})`));
+      },
+    });
+
+    const collectionPrefix = embedder.kind === 'semantic' ? 'sem-' : 'ns-';
+    let fallbackReason = chromaUrl ? null : 'No Chroma URL configured';
 
     if (chromaUrl) {
-      const chroma = createChromaStore({ url: chromaUrl, dataDir, chunkOptions, ChromaClient });
+      const chroma = createChromaStore({
+        url: chromaUrl,
+        embedder,
+        ChromaClient,
+        collectionPrefix,
+        chunkOptions,
+      });
 
       try {
         await chroma.ready();
-        resolved = { store: chroma, backend: 'chroma', reason: null };
+        resolved = { store: chroma, backend: 'chroma', embedder, reason: null };
         return resolved;
       } catch (error) {
         fallbackReason = `Chroma unreachable: ${error.message}`;
@@ -36,8 +55,9 @@ export function createAdaptiveStore({
     }
 
     resolved = {
-      store: createVectorStore({ dataDir, chunkOptions }),
+      store: createVectorStore({ dataDir, embedder, chunkOptions }),
       backend: 'local',
+      embedder,
       reason: fallbackReason,
     };
 
@@ -45,10 +65,17 @@ export function createAdaptiveStore({
   }
 
   return {
-    /** Which backend is actually serving — `pending` until the first call. */
+    /** Which embedder and which backend are actually serving. */
     async describe() {
-      const { backend, reason, store } = await active();
-      return { backend, reason, url: store.url ?? null };
+      const { backend, reason, store, embedder } = await active();
+
+      return {
+        backend,
+        reason,
+        url: store.url ?? null,
+        collectionPrefix: store.collectionPrefix ?? null,
+        embedder: { kind: embedder.kind, ...embedder.stats },
+      };
     },
 
     async ingest(args) {

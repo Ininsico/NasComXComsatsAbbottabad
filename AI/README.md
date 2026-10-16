@@ -1,21 +1,25 @@
 # AI — RAG pipeline
 
-A self-contained retrieval-augmented generation pipeline. It has **no npm
-dependencies of its own**: the embedding model is implemented here, and anything
-external (the Chroma client, the generation API key) is injected by the caller.
+A retrieval-augmented generation pipeline. The Node side has **no npm dependencies of its own** —
+the Chroma client, the generation API key and the semantic embedder are all injected — and the
+embedding model itself lives in `main.py`.
 
 ```
 AI/
+├── main.py             Python service: semantic embeddings, Chroma search, Groq answers
+├── PROMPTS.md          reusable prompts, including the WhatsApp QR pairing flow
 ├── src/
-│   ├── embedder.js     deterministic hashed TF-IDF vectors + cosine similarity
+│   ├── semanticEmbedder.js  HTTP client for main.py (bge-small, 384 dimensions)
+│   ├── embedders.js    resolves semantic, else hashed
+│   ├── embedder.js     hashed TF-IDF vectors + cosine — the fallback model
 │   ├── chunker.js      paragraph/sentence-aware chunking with overlap
 │   ├── vectorStore.js  built-in store (JSON-backed), used as the fallback
 │   ├── chromaStore.js  Chroma-backed store — one collection per namespace
-│   ├── store.js        picks Chroma when reachable, else the built-in store
+│   ├── store.js        picks the embedder and backend, reports which won
 │   ├── pipeline.js     ingest / search / answer, with namespace isolation
 │   ├── generate.js     Groq chat completion (transport only)
 │   └── index.js        public surface
-└── data/               vector data + persisted embedder state (gitignored)
+└── data/               Chroma data and fallback vectors (gitignored)
 ```
 
 ## Vector spaces are isolated per member
@@ -34,18 +38,43 @@ With Chroma each namespace is its own **collection** (`ns-shared-campus`,
 filtering. A member's query can only reach their own collection plus the shared
 one, which is asserted in the pipeline test.
 
-## Embeddings
+## Embeddings are semantic
 
-`embedder.js` projects text into a fixed 512-dimension space with the hashing
-trick over unigrams and bigrams, weighted by sublinear TF and IDF and
-L2-normalised, so cosine similarity is meaningful. The IDF table is persisted
-next to the vector data, so query vectors are weighted identically across
-restarts.
+`main.py` loads **`BAAI/bge-small-en-v1.5`** through fastembed (ONNX runtime, no torch) and serves
+384-dimension unit vectors. It is genuinely semantic, which matters for retrieval:
 
-It is deliberately swappable: `createEmbedder()` exposes `fit`/`embed`, so a
-neural model (for example MiniLM via `@huggingface/transformers`) can replace it
-without touching the stores or the pipeline. Chroma can also be pointed at its
-own server-side embedding function if you prefer.
+| Pair | Score |
+| --- | --- |
+| "How much do I owe for tuition this semester?" vs "What is my fee amount?" | 0.731 |
+| "When do admission applications close?" vs "What is the last date to apply?" | 0.833 |
+| "My advisor is Dr. Sadia Khan" vs "Who supervises my studies?" | 0.654 |
+| Unrelated pairs | 0.56 – 0.63 |
+| Same text | 1.000 |
+
+Because the scores sit in a 0.4 – 0.9 band rather than 0 – 1, `RAG_MIN_SCORE` is a safety net and
+`RAG_TOP_K` does most of the filtering.
+
+If the Python service is not running, `embedders.js` falls back to `embedder.js` — hashed TF-IDF
+vectors over unigrams and bigrams. It needs no model, but it only matches words, not meaning. The
+collection prefix follows the embedder (`sem-` vs `ns-`), so the two never share a collection.
+
+## Running it
+
+```bash
+pip install flask flask-cors fastembed chromadb
+python main.py
+```
+
+```
+GET  /health    embedder model, dimensions and Chroma status
+POST /embed     {"texts": ["...", "..."]}                  -> dense vectors
+POST /ingest    {"namespace", "sourceId", "title", "text"}
+POST /search    {"query", "namespaces": [...], "topK"}
+POST /ask       {"query", "namespaces": [...]}              -> Groq answer
+```
+
+The Node backend only needs `/health` and `/embed`; `/ingest`, `/search` and `/ask` make the whole
+pipeline runnable and testable from Python alone.
 
 ## Usage
 

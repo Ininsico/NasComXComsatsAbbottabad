@@ -99,12 +99,19 @@ export default function Knowledge() {
           <div className="btn-row">
             <span className="pill pill--info">
               <Boxes size={12} aria-hidden="true" />
-              {data.stats?.dimensions ?? 512} dimensions
+              {data.vectorBackend?.embedder?.dimensions ?? data.stats?.dimensions ?? 512} dimensions
             </span>
             <span
               className={`pill ${data.vectorBackend?.backend === 'chroma' ? 'pill--done' : 'pill--neutral'}`}
             >
               {data.vectorBackend?.backend === 'chroma' ? 'Chroma' : 'Built-in store'}
+            </span>
+            <span
+              className={`pill ${data.vectorBackend?.embedder?.kind === 'semantic' ? 'pill--done' : 'pill--pending'}`}
+            >
+              {data.vectorBackend?.embedder?.kind === 'semantic'
+                ? `semantic · ${data.vectorBackend.embedder.model ?? 'bge-small'}`
+                : 'hashed fallback'}
             </span>
           </div>
         ) : null}

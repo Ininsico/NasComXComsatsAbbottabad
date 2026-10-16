@@ -13,10 +13,12 @@ import { ANNOUNCEMENTS, FACULTY, PROGRAMS } from '../data/campus.js';
  */
 const store = createAdaptiveStore({
   chromaUrl: config.rag.useChroma ? config.rag.chromaUrl : null,
+  semanticUrl: config.rag.useSemantic ? config.rag.embeddingsUrl : null,
+  preferSemantic: config.rag.useSemantic,
   dataDir: config.rag.dataDir || undefined,
   ChromaClient,
   onFallback: (error) => {
-    console.warn(`RAG: Chroma unavailable (${error.message}) — using the built-in vector store`);
+    console.warn(`RAG: ${error.message} — falling back`);
   },
 });
 

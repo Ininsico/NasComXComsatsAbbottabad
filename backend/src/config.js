@@ -69,6 +69,8 @@ export const config = {
     minScore: toFloat(process.env.RAG_MIN_SCORE, 0.05),
     chromaUrl: process.env.CHROMA_URL ?? 'http://localhost:8000',
     useChroma: toBool(process.env.RAG_USE_CHROMA, true),
+    embeddingsUrl: process.env.EMBEDDINGS_URL ?? 'http://127.0.0.1:8100',
+    useSemantic: toBool(process.env.RAG_USE_SEMANTIC, true),
     dataDir: process.env.RAG_DATA_DIR ?? '',
   },
   whatsapp: {

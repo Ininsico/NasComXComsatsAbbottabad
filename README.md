@@ -226,7 +226,16 @@ to the same Cloudinary account (up to 8 MB) and the secure URL is stored on the 
 
 ## Retrieval-augmented AI
 
-`AI/` is a self-contained RAG pipeline with no dependencies of its own — see `AI/README.md`.
+`AI/` is a self-contained RAG pipeline — see `AI/README.md`, and `AI/PROMPTS.md` for the reusable
+prompt behind the WhatsApp flow.
+
+**Embeddings are genuinely semantic**, not a bag of words: `AI/main.py` serves
+`BAAI/bge-small-en-v1.5` (384 dimensions) through fastembed/ONNX, and the Node side calls it.
+That is what lets "When is the athletics festival?" retrieve a document about the "sports gala".
+
+> **Groq does not do embeddings.** `/v1/embeddings` rejects every model on the key with
+> *"the model does not support embeddings"*. Groq is used for the answer step only.
+
 **Chroma** is the vector database and every namespace is its own collection, so a member's
 documents live in a genuinely separate vector space rather than being filtered at query time.
 
@@ -236,14 +245,25 @@ documents live in a genuinely separate vector space rather than being filtered a
 | `user:<id>`     | one member's own documents         | that member only    |
 | `wa:<number>`   | an unrecognised WhatsApp sender's  | that sender only    |
 
+The collection prefix follows the embedder (`sem-` for semantic, `ns-` for the hashed fallback),
+so switching models starts a new index instead of corrupting the existing one.
+
 ```bash
-pip install chromadb
-npm run chroma          # chroma run --path ./AI/data/chroma --port 8000
+pip install chromadb fastembed flask flask-cors
+npm run chroma          # vector database     -> http://localhost:8000
+npm run embed           # embeddings + service -> http://127.0.0.1:8100
+
+# equivalently:
+chroma run --path ./AI/data/chroma --port 8000
+python AI/main.py
 ```
 
-If the CLI is not on PATH (pip can install it under your user profile), call `chroma.exe`
-directly. When Chroma is unreachable the backend falls back to a bundled vector store, logs why, and
-the `/knowledge` page shows which backend is actually serving.
+Either dependency can be missing: without Chroma the pipeline uses a bundled vector store, and
+without the embedding service it falls back to hashed vectors. Both fallbacks are logged, and the
+`/knowledge` page shows which backend and which embedder are actually serving.
+
+`python AI/main.py` also exposes `/ingest`, `/search` and `/ask`, so the whole pipeline can be
+exercised from Python alone.
 
 ## WhatsApp assistant
 

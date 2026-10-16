@@ -11,7 +11,8 @@
     "build:frontend": "npm --prefix frontend run build",
     "lint:frontend": "npm --prefix frontend run lint",
     "start:backend": "npm --prefix backend start",
-    "chroma": "chroma run --path ./AI/data/chroma --port 8000"
+    "chroma": "chroma run --path ./AI/data/chroma --port 8000",
+    "embed": "python AI/main.py"
   },
   "license": "MIT"
 }
