@@ -1,0 +1,216 @@
+# COMSATS Abbottabad — full stack.
+#
+#   frontend (nginx + SPA)  ──▶  backend (Express)  ──▶  ai (Flask: embeddings, voice)
+#            │                          │                        │
+#            └── TLS is terminated by the host nginx, which      ├──▶ chroma (vector db)
+#                forwards the domain to 127.0.0.1:8085           └──▶ rabbitmq (audio queue)
+#
+# Only the frontend publishes a host port, and only on loopback. The broker, the
+# vector database and the API are reachable inside the compose network alone.
+#
+# Run it from the repository root (or from /opt/nascon on the server):
+#
+#   docker compose --env-file .env up -d --build     # build locally
+#   docker compose --env-file .env pull              # use published images
+#
+# This file lives at the root so the build contexts below (`context: .`) are the
+# repository root in every environment.
+
+name: nascon
+
+x-logging: &default-logging
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+  # ------------------------------------------------------------------ #
+  # Audio queue broker — the official RabbitMQ image
+  # ------------------------------------------------------------------ #
+  rabbitmq:
+    image: rabbitmq:4-management-alpine
+    restart: unless-stopped
+    <<: *default-logging
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:?set RABBITMQ_USER in deploy/.env}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?set RABBITMQ_PASSWORD in deploy/.env}
+      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST:-comsats}
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 40s
+    networks: [nascon]
+    # Deliberately not published. Only the ai service needs the broker, and keeping
+    # 5672 off the host means no unauthenticated AMQP from the internet. To inspect
+    # the management UI, tunnel it:
+    #   ssh -L 15672:127.0.0.1:15672 root@<vm>   then open http://localhost:15672
+
+  # ------------------------------------------------------------------ #
+  # Vector database
+  # ------------------------------------------------------------------ #
+  chroma:
+    build:
+      context: .
+      dockerfile: deploy/docker/chroma.Dockerfile
+    image: ${REGISTRY}/nascon-chroma:${IMAGE_TAG}
+    restart: unless-stopped
+    <<: *default-logging
+    environment:
+      ANONYMIZED_TELEMETRY: "FALSE"
+      IS_PERSISTENT: "TRUE"
+    volumes:
+      - chroma-data:/data
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/v2/heartbeat', timeout=4).status == 200 else 1)"
+      interval: 15s
+      timeout: 6s
+      retries: 12
+      start_period: 40s
+    networks: [nascon]
+
+  # ------------------------------------------------------------------ #
+  # AI service: semantic embeddings, voice (STT/TTS/VAD), audio queue worker
+  # ------------------------------------------------------------------ #
+  ai:
+    build:
+      context: .
+      dockerfile: deploy/docker/ai.Dockerfile
+    image: ${REGISTRY}/nascon-ai:${IMAGE_TAG}
+    restart: unless-stopped
+    <<: *default-logging
+    environment:
+      # Configuration comes from the compose environment, not a bind-mounted file.
+      ENV_FILE: /dev/null
+      EMBED_HOST: 0.0.0.0
+      EMBED_PORT: "8100"
+      EMBED_MODEL: ${EMBED_MODEL:-BAAI/bge-small-en-v1.5}
+
+      # Chroma runs as its own container here, so main.py must not spawn one.
+      CHROMA_AUTOSTART: "false"
+      CHROMA_HOST: chroma
+      CHROMA_PORT: "8000"
+      CHROMA_COLLECTION_PREFIX: ${CHROMA_COLLECTION_PREFIX:-sem-}
+
+      GROQ_API_KEY: ${GROQ_API_KEY:?set GROQ_API_KEY in deploy/.env}
+      GROQ_MODEL: ${GROQ_MODEL:-openai/gpt-oss-20b}
+
+      # The audio queue. A single consumer with prefetch_count=1 is what makes
+      # "one recording at a time" true.
+      RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/${RABBITMQ_VHOST:-comsats}
+      RABBITMQ_AUDIO_QUEUE: ${RABBITMQ_AUDIO_QUEUE:-voice.audio}
+      RABBITMQ_JOB_TIMEOUT: ${RABBITMQ_JOB_TIMEOUT:-180}
+
+      # Voice: Groq Whisper in, edge-tts out.
+      VOICE_STT_MODEL: ${VOICE_STT_MODEL:-whisper-large-v3-turbo}
+      VOICE_STT_LANGUAGE: ${VOICE_STT_LANGUAGE:-en}
+      VOICE_TTS_VOICE: ${VOICE_TTS_VOICE:-en-US-AriaNeural}
+      VOICE_VAD_THRESHOLD_DB: ${VOICE_VAD_THRESHOLD_DB:--38}
+      VOICE_VAD_HANGOVER_MS: ${VOICE_VAD_HANGOVER_MS:-350}
+      VOICE_VAD_MIN_SPEECH_MS: ${VOICE_VAD_MIN_SPEECH_MS:-180}
+    volumes:
+      # Embedding model cache, audio spool files, local vector fallback.
+      - ai-data:/app/data
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      chroma:
+        condition: service_healthy
+    networks: [nascon]
+
+  # ------------------------------------------------------------------ #
+  # Express API
+  # ------------------------------------------------------------------ #
+  backend:
+    build:
+      context: .
+      dockerfile: deploy/docker/backend.Dockerfile
+    image: ${REGISTRY}/nascon-backend:${IMAGE_TAG}
+    restart: unless-stopped
+    <<: *default-logging
+    environment:
+      PORT: "4000"
+      NODE_ENV: production
+      CORS_ORIGIN: ${PUBLIC_ORIGIN:-https://nascon.artdevelopers.site}
+
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in deploy/.env}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+
+      CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME}
+      CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY}
+      CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET}
+      CLOUDINARY_FOLDER: ${CLOUDINARY_FOLDER:-comsats-abbottabad}
+
+      GROQ_API_KEY: ${GROQ_API_KEY}
+      GROQ_MODEL: ${GROQ_MODEL:-openai/gpt-oss-20b}
+      GROQ_FAST_MODEL: ${GROQ_FAST_MODEL:-openai/gpt-oss-20b}
+      GROQ_REASONING_EFFORT: ${GROQ_REASONING_EFFORT:-low}
+      GROQ_MAX_TOKENS: ${GROQ_MAX_TOKENS:-320}
+
+      RAG_TOP_K: ${RAG_TOP_K:-3}
+      RAG_MIN_SCORE: ${RAG_MIN_SCORE:-0.05}
+      RAG_USE_CHROMA: "true"
+      CHROMA_URL: http://chroma:8000
+      RAG_USE_SEMANTIC: "true"
+      EMBEDDINGS_URL: http://ai:8100
+
+      # WhatsApp needs a Chromium and an interactive QR scan per environment, so it
+      # stays off in containers. See deploy/README.md to enable it.
+      WHATSAPP_ENABLED: "false"
+
+      BINANCE_BASE_URL: ${BINANCE_BASE_URL:-https://api.binance.com}
+      BINANCE_API_KEY: ${BINANCE_API_KEY}
+      BINANCE_API_SECRET: ${BINANCE_API_SECRET}
+      BINANCE_DEPOSIT_COIN: ${BINANCE_DEPOSIT_COIN:-USDT}
+      BINANCE_DEPOSIT_NETWORK: ${BINANCE_DEPOSIT_NETWORK:-TRX}
+      PAYMENT_TOLERANCE_PERCENT: ${PAYMENT_TOLERANCE_PERCENT:-10}
+      PAYMENT_POLL_SECONDS: ${PAYMENT_POLL_SECONDS:-30}
+    volumes:
+      - backend-data:/app/data
+    depends_on:
+      ai:
+        condition: service_started
+      chroma:
+        condition: service_healthy
+    networks: [nascon]
+
+  # ------------------------------------------------------------------ #
+  # SPA + routing — the only service with a host port
+  # ------------------------------------------------------------------ #
+  frontend:
+    build:
+      context: .
+      dockerfile: deploy/docker/frontend.Dockerfile
+      args:
+        VITE_API_URL: ""
+        VITE_VOICE_URL: ""
+    image: ${REGISTRY}/nascon-frontend:${IMAGE_TAG}
+    restart: unless-stopped
+    <<: *default-logging
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT:-8085}:80"
+    depends_on:
+      backend:
+        condition: service_started
+      ai:
+        condition: service_started
+    networks: [nascon]
+
+networks:
+  nascon:
+    driver: bridge
+
+volumes:
+  rabbitmq-data:
+  chroma-data:
+  ai-data:
+  backend-data:

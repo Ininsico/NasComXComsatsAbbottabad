@@ -1,0 +1,11 @@
+# Python service dependencies (embeddings, vector search, voice, audio queue).
+#
+# chromadb is here as a *client*: main.py's VectorDatabase talks to the Chroma
+# server over its HTTP API through chromadb.HttpClient. Pinned to the exact version
+# the chroma container runs, so client and server can never drift apart.
+Flask~=3.1
+flask-cors~=6.0
+fastembed~=0.9
+chromadb==1.5.9
+pika~=1.4
+edge-tts~=7.3

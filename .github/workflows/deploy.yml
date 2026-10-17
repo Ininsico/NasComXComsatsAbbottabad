@@ -1,0 +1,229 @@
+name: Deploy
+
+# Proper pipeline: build the images, publish them to GHCR, then hand the server a
+# compose file and the new tag. The server never builds and never receives source —
+# it only pulls images and restarts containers.
+#
+# One-time repository secrets (Settings > Secrets and variables > Actions):
+#   VM_HOST      the server's address
+#   VM_USER      a user that can run docker
+#   VM_SSH_KEY   the private key of a deploy key that is authorised on the server
+#   GHCR_TOKEN   a PAT with read:packages, so the server can pull the images
+#                (or make the packages public and leave this empty)
+#
+# The application's own secrets (JWT_SECRET, GROQ_API_KEY, Cloudinary, Binance,
+# RABBITMQ_PASSWORD …) live only in /opt/nascon/.env on the server. They are created
+# once from deploy/.env.example and never travel through CI.
+#
+# Authorise the deploy key on the server once with:
+#   bash deploy/scripts/authorize-deploy-key.sh "<the public key>"
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**/*.md'
+      - 'deploy/nginx/**'
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  DOMAIN: nascon.artdevelopers.site
+  APP_DIR: /opt/nascon
+
+jobs:
+  build:
+    name: Build and push images
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [frontend, backend, ai, chroma]
+    steps:
+      - uses: actions/checkout@v4
+
+      # GHCR requires a lowercase namespace.
+      - name: Resolve the image prefix
+        run: echo "IMAGE_PREFIX=${GITHUB_REPOSITORY,,}" >>"$GITHUB_ENV"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push nascon-${{ matrix.service }}
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/${{ matrix.service }}.Dockerfile
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/nascon-${{ matrix.service }}:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/nascon-${{ matrix.service }}:latest
+          build-args: |
+            VITE_API_URL=
+            VITE_VOICE_URL=
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,scope=${{ matrix.service }},mode=max
+
+  deploy:
+    name: Roll out to the server
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Preflight — required secrets are present
+        env:
+          VM_HOST: ${{ secrets.VM_HOST }}
+          VM_USER: ${{ secrets.VM_USER }}
+          VM_SSH_KEY: ${{ secrets.VM_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          missing=""
+          [ -n "$VM_HOST" ] || missing="$missing VM_HOST"
+          [ -n "$VM_USER" ] || missing="$missing VM_USER"
+          [ -n "$VM_SSH_KEY" ] || missing="$missing VM_SSH_KEY"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secrets:$missing — see deploy/README.md"
+            exit 1
+          fi
+          echo "secrets present"
+
+      - name: Resolve the image prefix
+        run: echo "IMAGE_PREFIX=${GITHUB_REPOSITORY,,}" >>"$GITHUB_ENV"
+
+      - name: Set up SSH
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.VM_SSH_KEY }}" >~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          ssh-keyscan -H "${{ secrets.VM_HOST }}" >>~/.ssh/known_hosts 2>/dev/null
+
+      - name: Ship the compose file
+        run: |
+          set -euo pipefail
+          TARGET="${{ secrets.VM_USER }}@${{ secrets.VM_HOST }}"
+          ssh -i ~/.ssh/id_deploy "$TARGET" "mkdir -p '${{ env.APP_DIR }}'"
+          scp -i ~/.ssh/id_deploy docker-compose.yml "$TARGET:${{ env.APP_DIR }}/docker-compose.yml"
+
+      - name: Pull the new images and restart
+        env:
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/id_deploy "${{ secrets.VM_USER }}@${{ secrets.VM_HOST }}" \
+            "IMAGE_TAG='${{ github.sha }}' IMAGE_PREFIX='${{ env.IMAGE_PREFIX }}' GHCR_TOKEN='$GHCR_TOKEN' ACTOR='${{ github.actor }}' bash -s" <<'REMOTE'
+          set -euo pipefail
+          cd /opt/nascon
+
+          if [ ! -f .env ]; then
+            echo "ERROR: no /opt/nascon/.env — copy deploy/.env.example there first"
+            exit 1
+          fi
+
+          if [ -n "${GHCR_TOKEN:-}" ]; then
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
+          else
+            echo "no GHCR_TOKEN secret — assuming the packages are public"
+          fi
+
+          export REGISTRY="ghcr.io/${IMAGE_PREFIX}"
+          export IMAGE_TAG
+
+          echo "deploying ${IMAGE_TAG} from ${REGISTRY}"
+          if ! docker compose --env-file .env pull; then
+            echo
+            echo "ERROR: the images could not be pulled."
+            echo "  Either add the GHCR_TOKEN repository secret (a PAT with read:packages),"
+            echo "  or make the four nascon-* packages public in the repository's package"
+            echo "  settings, then re-run this workflow."
+            exit 1
+          fi
+
+          docker compose --env-file .env up -d --remove-orphans
+          docker image prune -f --filter "until=168h" >/dev/null 2>&1 || true
+
+          docker compose --env-file .env ps
+          REMOTE
+
+      - name: Verify
+        run: |
+          set -euo pipefail
+          fail() { echo "::error::$1"; exit 1; }
+
+          for attempt in $(seq 1 24); do
+            if curl -fsS --max-time 10 "https://$DOMAIN/api/health" >/dev/null 2>&1; then
+              echo "site is answering (attempt $attempt)"
+              break
+            fi
+            [ "$attempt" = "24" ] && fail "the site did not come up"
+            echo "attempt $attempt: waiting for $DOMAIN"
+            sleep 10
+          done
+
+          echo
+          echo "== SPA =="
+          curl -fsS --max-time 20 "https://$DOMAIN/" | grep -q 'id="root"' \
+            || fail "the SPA shell was not served"
+
+          echo "== API =="
+          curl -fsS --max-time 20 "https://$DOMAIN/api/health" | tee /tmp/api.json
+          grep -q '"status":"ok"' /tmp/api.json || fail "the API is not healthy"
+
+          echo
+          echo "== voice + audio queue =="
+          curl -fsS --max-time 30 "https://$DOMAIN/voice/health" >/tmp/voice.json
+          python3 - <<'PY'
+          import json, sys
+          data = json.load(open("/tmp/voice.json"))
+          queue = data.get("queue", {})
+          print("stt     :", data["stt"]["model"], "configured:", data["stt"]["configured"])
+          print("tts     :", data["tts"]["voice"], "edge_tts:", data["tts"]["edge_tts"])
+          print("queue   :", queue.get("queue"), "worker:", queue.get("worker_alive"), "broker:", queue.get("reason"))
+          problems = []
+          if not data["stt"]["configured"]:
+              problems.append("speech-to-text is not configured")
+          if not queue.get("worker_alive"):
+              problems.append("the audio queue worker is not running")
+          if problems:
+              print("::error::" + "; ".join(problems))
+              sys.exit(1)
+          print("voice path healthy")
+          PY
+
+          echo
+          echo "deployed ${{ github.sha }}"
+
+      - name: What to do when this fails
+        if: failure()
+        run: |
+          cat <<'EOF'
+          ::warning::Deployment failed. The usual causes:
+
+            1. Missing repository secrets — VM_HOST, VM_USER, VM_SSH_KEY
+               (Settings > Secrets and variables > Actions)
+
+            2. Images could not be pulled on the server. Either add GHCR_TOKEN
+               (a PAT with read:packages) or make the four nascon-* packages public
+               under the repository's package settings.
+
+            3. A service did not become healthy. Check on the server:
+                 cd /opt/nascon && docker compose --env-file .env ps
+                 cd /opt/nascon && docker compose --env-file .env logs --tail=50 <service>
+
+            4. Roll back to the previous build:
+                 cd /opt/nascon
+                 IMAGE_TAG=<previous-sha> docker compose --env-file .env up -d
+          EOF

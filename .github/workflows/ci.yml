@@ -1,0 +1,159 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: Frontend (lint + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+
+  backend:
+    name: Backend (syntax + boot)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install
+        working-directory: backend
+        run: npm ci
+
+      - name: Syntax check every module
+        working-directory: backend
+        run: |
+          set -e
+          find src -name '*.js' -print0 | while IFS= read -r -d '' file; do
+            node --check "$file"
+          done
+          echo "all modules parse"
+
+      - name: Boot against a stub configuration and hit /api/health
+        working-directory: backend
+        env:
+          NODE_ENV: production
+          PORT: '4000'
+          JWT_SECRET: ci-only-secret-that-is-long-enough-to-satisfy-the-guard
+          WHATSAPP_ENABLED: 'false'
+          RAG_USE_CHROMA: 'false'
+          RAG_USE_SEMANTIC: 'false'
+          RAG_DATA_DIR: ${{ runner.temp }}/rag
+        run: |
+          set -euo pipefail
+          node src/server.js >server.log 2>&1 &
+          SERVER_PID=$!
+
+          for _ in $(seq 1 40); do
+            if curl -fsS http://127.0.0.1:4000/api/health >health.json 2>/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+
+          cat health.json
+          grep -q '"status":"ok"' health.json
+
+          kill "$SERVER_PID" || true
+          wait "$SERVER_PID" 2>/dev/null || true
+
+      - name: Show server log on failure
+        if: failure()
+        working-directory: backend
+        run: cat server.log || true
+
+  ai:
+    name: AI service (compile + import)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: AI/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r AI/requirements.txt
+
+      - name: Byte-compile
+        run: python -m compileall -q AI
+
+      - name: Import smoke test
+        working-directory: AI
+        run: |
+          python - <<'PY'
+          import main          # builds the app and the queue object
+          import voice
+          import audio_queue
+
+          queue = audio_queue.AudioQueue("")
+          assert queue.enabled is False, "a broker-less queue must report itself disabled"
+
+          # The VAD must find speech in a synthetic tone and silence in silence.
+          from array import array
+          loud = array("h", [12000, -12000] * 8000)
+          quiet = array("h", [0] * 16000)
+          assert voice.analyse_speech(loud, 16000)["segments"], "no speech found in a tone"
+          assert not voice.analyse_speech(quiet, 16000)["segments"], "silence reported as speech"
+
+          print("AI modules import and the VAD behaves")
+          PY
+
+  docker:
+    name: Docker images build
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - name: frontend
+            dockerfile: deploy/docker/frontend.Dockerfile
+          - name: backend
+            dockerfile: deploy/docker/backend.Dockerfile
+          - name: ai
+            dockerfile: deploy/docker/ai.Dockerfile
+          - name: chroma
+            dockerfile: deploy/docker/chroma.Dockerfile
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build ${{ matrix.name }}
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: false
+          build-args: |
+            VITE_API_URL=
+            VITE_VOICE_URL=
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,scope=${{ matrix.name }},mode=max

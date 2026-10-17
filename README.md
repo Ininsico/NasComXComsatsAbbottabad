@@ -329,6 +329,41 @@ spoken turn, with TTS the dominant cost.
 > Note: Cloudflare in front of Groq answers `403` (error 1010) to Python's default
 > `urllib` User-Agent, so every outbound request from the Python service sets one explicitly.
 
+## Audio queue
+
+Voice turns cannot run concurrently: two at once would fight over the same Groq quota
+and the same speaker. RabbitMQ arbitrates.
+
+`AI/audio_queue.py` publishes each recording to a durable `voice.audio` queue and
+drains it with a **single consumer using `prefetch_count=1`**, so the broker — not
+luck — is what guarantees one job in flight. The `ai` service is therefore never
+replicated; a second replica would be a second consumer.
+
+A recording is ~450 KB once base64-encoded, and pushing that through the broker to a
+remote host cost 4.5 s of pickup latency on a 330 kbps uplink, against 0.3 s for a
+small message. So the audio is written to a spool file and only its id travels in the
+message (the claim-check pattern), drained as jobs complete and swept on startup. On
+the server, where the broker is on loopback, queue wait measures **3–5 ms**.
+
+Queue depth, in-flight count, job counters and spool files are exposed at
+`GET /voice/queue` and included in `/voice/health`. With no reachable broker the
+service falls back to an in-process lock, which also prevents overlap.
+
+## Deployment
+
+Everything ships as containers and deploys through GitHub Actions — see
+[deploy/README.md](deploy/README.md).
+
+| File | What it does |
+| --- | --- |
+| `docker-compose.yml` | frontend, backend, ai, chroma and the official RabbitMQ image |
+| `deploy/docker/*.Dockerfile` | one image per service |
+| `deploy/scripts/bootstrap-vm.sh` | prepares a host: Docker, vhost, certificate |
+| `.github/workflows/ci.yml` | lint, build, boot the API, import the AI, build all images |
+| `.github/workflows/deploy.yml` | builds to GHCR, then pulls and restarts on the server |
+
+Live at <https://nascon.artdevelopers.site>.
+
 ## Data storage
 
 Accounts are persisted to `backend/data/users.json` using atomic writes, and it is gitignored so

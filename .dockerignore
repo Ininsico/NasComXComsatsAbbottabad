@@ -1,0 +1,26 @@
+# Build context is the repository root, because each image needs one subdirectory.
+
+**/node_modules
+**/dist
+**/.git
+.gitignore
+
+# Secrets must never be baked into an image.
+**/.env
+**/.env.local
+**/.env.production
+!**/.env.example
+
+# Runtime state
+backend/data
+backend/uploads
+AI/data
+**/__pycache__
+**/*.pyc
+**/*.log
+
+# Docs and editor noise
+**/*.md
+.gitattributes
+.vscode
+.idea

@@ -31,6 +31,7 @@ import shutil
 import site
 import subprocess
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -39,6 +40,7 @@ from typing import Any
 
 from flask import Flask, Response, jsonify, request
 
+import audio_queue as audio_queue_layer
 import voice as voice_layer
 
 try:  # optional, only used when the browser calls this service directly
@@ -96,6 +98,21 @@ GROQ_ENDPOINT = os.getenv("GROQ_ENDPOINT", "https://api.groq.com/openai/v1/chat/
 
 CHUNK_TARGET = int(os.getenv("RAG_CHUNK_TARGET", "900"))
 CHUNK_OVERLAP = int(os.getenv("RAG_CHUNK_OVERLAP", "150"))
+
+# Audio turns are serialised through RabbitMQ: one job in flight at a time, so two
+# uploads can never be transcribed or spoken over each other.
+RABBITMQ_URL = os.getenv("RABBITMQ_URL", "")
+RABBITMQ_QUEUE = os.getenv("RABBITMQ_AUDIO_QUEUE", "voice.audio")
+RABBITMQ_JOB_TIMEOUT = int(os.getenv("RABBITMQ_JOB_TIMEOUT", "180"))
+
+audio_queue = audio_queue_layer.AudioQueue(
+    RABBITMQ_URL,
+    queue_name=RABBITMQ_QUEUE,
+    job_timeout=RABBITMQ_JOB_TIMEOUT,
+)
+
+# Belt and braces: even with no broker, two turns still cannot run together.
+TURN_LOCK = threading.Lock()
 
 SYSTEM_PROMPT = (
     "You are the friendly assistant for COMSATS Abbottabad, replying in a chat. "
@@ -612,6 +629,7 @@ def voice_health():
                 "threshold_db": voice_layer.VAD_THRESHOLD_DB,
             },
             "target_sample_rate": voice_layer.TARGET_SAMPLE_RATE,
+            "queue": audio_queue.stats(),
         }
     )
 
@@ -656,17 +674,14 @@ def voice_tts():
     )
 
 
-@app.post("/voice/chat")
-def voice_chat():
-    """One conversational turn: record -> VAD -> STT -> RAG -> answer -> speech."""
-    raw, error = _read_upload()
-    if error:
-        return error
+def run_voice_turn(raw: bytes, user_id: str, namespaces: list[str]) -> tuple[dict, int]:
+    """VAD -> STT -> RAG -> answer -> speech. Returns (payload, status).
 
+    Deliberately free of Flask request objects so the queue worker can call it.
+    """
     if not GROQ_API_KEY:
-        return jsonify({"error": "GROQ_API_KEY is not set"}), 503
+        return {"error": "GROQ_API_KEY is not set"}, 503
 
-    namespaces = _voice_namespaces()
     timings: dict[str, Any] = {}
 
     prepared, vad, vad_ms = _prepare_audio(raw)
@@ -677,13 +692,13 @@ def voice_chat():
     try:
         stt = voice_layer.transcribe(prepared)
     except Exception as exc:
-        return jsonify({"error": f"Speech recognition failed: {exc}"}), 502
+        return {"error": f"Speech recognition failed: {exc}"}, 502
 
     timings["stt_ms"] = round((time.time() - started) * 1000)
     transcript = stt["text"]
 
     if len(transcript) < 2:
-        return jsonify({"error": "I did not catch any speech in that recording", "vad": vad}), 422
+        return {"error": "I did not catch any speech in that recording", "vad": vad}, 422
 
     started = time.time()
 
@@ -694,7 +709,7 @@ def voice_chat():
         )
         result = groq_answer(transcript, context, system=VOICE_SYSTEM_PROMPT)
     except Exception as exc:
-        return jsonify({"error": f"Answering failed: {exc}"}), 502
+        return {"error": f"Answering failed: {exc}"}, 502
 
     timings["llm_ms"] = round((time.time() - started) * 1000)
     answer = result["answer"]
@@ -712,7 +727,7 @@ def voice_chat():
 
     timings["tts_ms"] = round((time.time() - started) * 1000)
 
-    return jsonify(
+    return (
         {
             "transcript": transcript,
             "answer": answer,
@@ -726,8 +741,67 @@ def voice_chat():
             "tts_engine": engine,
             "vad": vad,
             "timings": timings,
-        }
+        },
+        200,
     )
+
+
+def queued_voice_job(job: dict) -> tuple[dict, int]:
+    """Worker side: turn one queue message back into a finished voice turn."""
+    try:
+        raw = base64.b64decode(job.get("audio") or "")
+    except Exception as exc:
+        return {"error": f"the queued audio could not be decoded: {exc}"}, 400
+
+    namespaces = job.get("namespaces") or ["shared:campus"]
+
+    return run_voice_turn(raw, job.get("user_id") or "", namespaces)
+
+
+@app.post("/voice/chat")
+def voice_chat():
+    """One conversational turn, serialised through RabbitMQ when configured."""
+    raw, error = _read_upload()
+    if error:
+        return error
+
+    namespaces = _voice_namespaces()
+    user_id = (request.form.get("user_id") or "").strip()
+
+    if audio_queue.enabled:
+        try:
+            envelope = audio_queue.submit(
+                {
+                    "audio": base64.b64encode(raw).decode("ascii"),
+                    "user_id": user_id,
+                    "namespaces": namespaces,
+                    "submitted_at": time.time(),
+                }
+            )
+
+            payload = envelope.get("payload") or {"error": "the queue returned nothing"}
+            status = int(envelope.get("status") or 200)
+            payload["queued"] = True
+            payload["queue"] = audio_queue.queue_name
+
+            return jsonify(payload), status
+        except Exception as exc:
+            # Keeping the assistant usable matters more than insisting on the
+            # broker, so a failure here falls through to inline processing.
+            print(f"  queue         submit failed, running inline instead: {exc}")
+
+    with TURN_LOCK:
+        payload, status = run_voice_turn(raw, user_id, namespaces)
+
+    payload["queued"] = False
+
+    return jsonify(payload), status
+
+
+@app.get("/voice/queue")
+def voice_queue():
+    """Queue depth, worker state and job counters."""
+    return jsonify({"stats": audio_queue.stats(), "broker": audio_queue.ping()})
 
 
 # --------------------------------------------------------------------------- #
@@ -861,9 +935,14 @@ def stop_chroma() -> None:
 # --------------------------------------------------------------------------- #
 
 
-def banner(started_chroma: bool, embedder_ready: bool) -> None:
+def safe_amqp_url(url: str) -> str:
+    """Broker URLs carry a password — never print it."""
+    return re.sub(r"://([^:/@]+):[^@]*@", r"://\1:***@", url or "")
+
+
+def banner(started_chroma: bool, embedder_ready: bool, queue_started: bool) -> None:
     print("=" * 72)
-    print("  COMSATS Abbottabad — AI service (embeddings + vectors)")
+    print("  COMSATS Abbottabad — AI service (embeddings + vectors + voice)")
     print("=" * 72)
 
     if embedder_ready:
@@ -878,24 +957,38 @@ def banner(started_chroma: bool, embedder_ready: bool) -> None:
     print(f"                {'started by this process' if started_chroma else 'already running'}")
 
     print(f"  groq          {GROQ_MODEL}  {'configured' if GROQ_API_KEY else 'NO API KEY'}")
+
+    if queue_started:
+        print(f"  queue         {audio_queue.queue_name} · prefetch=1 (one turn at a time)")
+        print(f"                {safe_amqp_url(audio_queue.url)}")
+    else:
+        print(f"  queue         disabled ({audio_queue.reason}) — turns serialised by an in-process lock")
+
     print(f"  listen        http://{EMBED_HOST}:{EMBED_PORT}")
     print("-" * 72)
-    print("  POST /embed    {\"texts\": [\"...\"]}")
-    print("  POST /ingest   {\"namespace\", \"sourceId\", \"title\", \"text\"}")
-    print("  POST /search   {\"query\", \"namespaces\": [...], \"topK\"}")
-    print("  POST /ask      {\"query\", \"namespaces\": [...]}")
+    print("  POST /embed        {\"texts\": [\"...\"]}")
+    print("  POST /ingest       {\"namespace\", \"sourceId\", \"title\", \"text\"}")
+    print("  POST /search       {\"query\", \"namespaces\": [...], \"topK\"}")
+    print("  POST /ask          {\"query\", \"namespaces\": [...]}")
+    print("  POST /voice/stt    multipart audio")
+    print("  POST /voice/tts    {\"text\"} -> audio bytes")
+    print("  POST /voice/chat   multipart audio -> transcript, answer and spoken reply")
+    print("  GET  /voice/health engines, VAD settings and queue state")
+    print("  GET  /voice/queue  queue depth and job counters")
     print("=" * 72)
-    print("  Ctrl+C stops both this service and the Chroma process it started.")
+    print("  Ctrl+C stops this service, the Chroma process and the queue worker.")
     print("=" * 72)
 
 
 if __name__ == "__main__":
     atexit.register(stop_chroma)
+    atexit.register(audio_queue.stop)
 
     started_chroma = ensure_chroma()
     embedder_ready = embedder.load()
+    queue_started = audio_queue.start(queued_voice_job)
 
-    banner(started_chroma, embedder_ready)
+    banner(started_chroma, embedder_ready, queue_started)
 
     try:
         app.run(host=EMBED_HOST, port=EMBED_PORT, debug=False, threaded=True)
