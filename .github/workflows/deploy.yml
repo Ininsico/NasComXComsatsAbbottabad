@@ -85,8 +85,16 @@ jobs:
             pending=0
 
             for id in $(docker compose --env-file "$APP_ENV_FILE" ps -q); do
-              status=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$id" 2>/dev/null || echo unknown)
-              if [ "$status" != "healthy" ]; then
+              # State and health in one read. A container with no healthcheck (the
+              # exporters, for instance) only has to be running; one that does have a
+              # healthcheck has to be healthy.
+              info=$(docker inspect -f '{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$id" 2>/dev/null || echo 'unknown|unknown')
+              state=${info%%|*}
+              health=${info##*|}
+
+              if [ "$state" != "running" ]; then
+                pending=$((pending + 1))
+              elif [ "$health" != "none" ] && [ "$health" != "healthy" ]; then
                 pending=$((pending + 1))
               fi
             done
