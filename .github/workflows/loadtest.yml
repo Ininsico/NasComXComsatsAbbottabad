@@ -1,0 +1,100 @@
+name: Load test
+
+# Manual, never automatic: these tests generate real traffic, and running them on every
+# push would make every deploy slower and noisier for no benefit.
+#
+#   gh workflow run loadtest.yml -f profile=smoke
+#   gh workflow run loadtest.yml -f profile=load -f vus=25
+#
+# Defaults to the loopback address of the frontend container, so the load goes through
+# nginx → backend → ai → chroma/redis without Cloudflare in the way. Pass a public URL
+# only when you deliberately want to measure the edge too.
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: What to run
+        type: choice
+        options: [smoke, load]
+        default: smoke
+      base_url:
+        description: Base URL
+        required: false
+        default: http://127.0.0.1:8085
+      vus:
+        description: Virtual users (load profile only)
+        required: false
+        default: "10"
+      include_ai:
+        description: Include Groq calls in the load profile (costs quota)
+        type: boolean
+        default: false
+
+concurrency:
+  group: loadtest
+  cancel-in-progress: false
+
+jobs:
+  run:
+    name: k6 (${{ inputs.profile }})
+    runs-on: [self-hosted, nascon]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install k6
+        run: bash deploy/scripts/install-k6.sh
+
+      - name: Confirm the target is up
+        run: |
+          set -euo pipefail
+          curl -fsS --max-time 15 "${{ inputs.base_url }}/api/health" | tee /tmp/health.json
+          grep -q '"status":"ok"' /tmp/health.json
+
+      - name: Run the smoke test (every feature, once)
+        if: inputs.profile == 'smoke'
+        run: |
+          set -euo pipefail
+          k6 run \
+            -e BASE_URL="${{ inputs.base_url }}" \
+            --summary-export=/tmp/k6-summary.json \
+            deploy/loadtest/smoke.js
+
+      - name: Run the load test
+        if: inputs.profile == 'load'
+        run: |
+          set -euo pipefail
+          k6 run \
+            -e BASE_URL="${{ inputs.base_url }}" \
+            -e VUS="${{ inputs.vus }}" \
+            -e INCLUDE_AI="${{ inputs.include_ai == true && '1' || '0' }}" \
+            --summary-export=/tmp/k6-summary.json \
+            deploy/loadtest/load.js
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "### k6 ${{ inputs.profile }}"
+          if [ -f /tmp/k6-summary.json ]; then
+            python3 - <<'PY'
+          import json
+
+          data = json.load(open("/tmp/k6-summary.json"))
+          metrics = data.get("metrics", {})
+
+          def value(name, key="avg"):
+              entry = metrics.get(name)
+              return entry.get(key) if entry else None
+
+          print(f"- requests        : {value('http_reqs', 'count')}")
+          print(f"- request rate    : {value('http_reqs', 'rate')} /s")
+          print(f"- failed requests : {value('http_req_failed', 'rate')}")
+          print(f"- p95 duration    : {value('http_req_duration', 'p(95)')} ms")
+          print(f"- checks passed   : {value('checks', 'rate')}")
+          for name, entry in sorted(metrics.items()):
+              if name.startswith("http_req_duration{") and entry.get("p(95)"):
+                  print(f"  - {name}: p95={entry['p(95)']:.0f}ms")
+          PY
+          else
+            echo "no summary written"
+          fi

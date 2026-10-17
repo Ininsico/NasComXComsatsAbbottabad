@@ -297,6 +297,26 @@ docker exec nascon-backend-1 node -e "fetch('http://127.0.0.1:4000/metrics').the
 curl -sI https://nascon.artdevelopers.site/grafana/ | head -3
 ```
 
+## Load tests
+
+k6 scripts in `deploy/loadtest/` that go through nginx to the real stack — no mocks.
+`smoke.js` walks every feature once and asserts what each endpoint returns (public pages,
+student and admin auth, documents, payments, retrieval, a real Groq answer, voice health
+and a real TTS call, and that `/metrics` is *not* public). `load.js` is a weighted mixed
+workload with p95 and error thresholds.
+
+```bash
+bash deploy/scripts/install-k6.sh
+k6 run deploy/loadtest/smoke.js
+k6 run -e VUS=25 deploy/loadtest/load.js
+gh workflow run loadtest.yml -f profile=smoke
+```
+
+They default to `http://127.0.0.1:8085` so the load goes through the same path a browser
+takes without Cloudflare in the way. Groq calls are excluded from the load profile unless
+`-e INCLUDE_AI=1`. Uploads, profile writes and payment intents are not load-tested —
+they mutate state or cost money. Full detail: [loadtest/README.md](loadtest/README.md).
+
 ## Environment and secrets
 
 `deploy/.env.example` documents every variable. Compose reads `/opt/nascon/.env`; the
