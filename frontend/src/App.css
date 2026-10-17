@@ -1612,6 +1612,116 @@
   grid-column: 1 / -1;
 }
 
+/* Voice --------------------------------------------------------------- */
+
+.voice-stage {
+  display: grid;
+  justify-items: center;
+  gap: 1rem;
+  padding: clamp(1.5rem, 1rem + 3vw, 2.5rem);
+  text-align: center;
+}
+
+.voice-mic {
+  display: grid;
+  place-items: center;
+  width: 96px;
+  height: 96px;
+  border: 2px solid var(--blue-200);
+  border-radius: 50%;
+  background: var(--blue-50);
+  color: var(--blue-700);
+  cursor: pointer;
+  transition: all 200ms ease;
+}
+
+.voice-mic:hover {
+  background: var(--blue-100);
+  border-color: var(--blue-300);
+}
+
+.voice-mic.is-active {
+  border-color: var(--rose-500);
+  background: var(--rose-50);
+  color: var(--rose-600);
+  animation: voice-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes voice-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(244, 63, 94, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 0 14px rgba(244, 63, 94, 0);
+  }
+}
+
+.voice-meter {
+  width: min(420px, 100%);
+  height: 8px;
+  overflow: hidden;
+  border-radius: var(--r-full);
+  background: var(--slate-200);
+}
+
+.voice-meter span {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--blue-500);
+  transition: width 80ms linear, background-color 120ms ease;
+}
+
+.voice-meter span.is-hot {
+  background: var(--rose-500);
+}
+
+.voice-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--slate-600);
+  cursor: pointer;
+}
+
+.voice-log {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.voice-turn {
+  padding: 0.875rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--r-2xl);
+  background: var(--surface);
+  box-shadow: var(--shadow-xs);
+}
+
+.voice-turn p {
+  margin: 0.25rem 0 0;
+  font-size: 0.875rem;
+}
+
+.voice-turn--user {
+  border-color: var(--blue-100);
+  background: var(--blue-50);
+}
+
+.voice-turn__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
 /* Knowledge base ------------------------------------------------------- */
 
 .knowledge-grid {

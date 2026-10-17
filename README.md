@@ -59,6 +59,7 @@ has an **instant login dropdown** so you can jump straight into any of them.
 | `/payments`   | Subscription plans and crypto deposits, confirmed automatically    |
 | `/profile`    | Member profile: contact, guardian details and a Cloudinary photo    |
 | `/knowledge`  | The member's own RAG space: ask, index documents, inspect namespaces |
+| `/voice`      | Spoken conversation: mic capture, VAD, transcription and spoken answers |
 
 ## Getting started
 
@@ -125,6 +126,7 @@ Base URL: `http://localhost:4000`
 | POST   | `/api/whatsapp/start`       | Admin  | —                                  | boots the WhatsApp client |
 | POST   | `/api/whatsapp/stop`        | Admin  | —                                  | stops it              |
 | POST   | `/api/whatsapp/send`        | Admin  | `{ to, text }`                     | sends a message       |
+| GET    | `/api/voice/…`              | —      | —                                  | see below — these live on the Python service (:8100) |
 
 Validation failures return `400` with a per-field `fields` object. Duplicate emails return `409`,
 bad credentials `401`. Passwords are hashed with bcrypt and never leave the API; sessions use signed
@@ -295,6 +297,37 @@ commit them, paste them into a chat, or copy them anywhere untrusted. `whatsapp:
 > Auto-start only happens when a linked session exists, so `whatsapp:pair` never has to compete with
 > the running API for the same browser profile. Set `WHATSAPP_ENABLED=true` only to force a client
 > with no session yet.
+
+## Voice assistant
+
+`/voice` in the portal is a spoken conversation with the same RAG brain. Everything runs locally
+except Whisper and the LLM.
+
+| Piece    | What it uses                                                    | Notes |
+| -------- | --------------------------------------------------------------- | ----- |
+| **VAD**  | Web Audio `AnalyserNode` in the browser, energy VAD in Python    | The browser learns the room noise for ~0.5 s, starts recording on speech and stops after 900 ms of silence. The server re-analyses the WAV, reports speech segments and trims silence before transcription. |
+| **STT**  | Groq `whisper-large-v3-turbo`                                    | 400–650 ms. A prompt biases the decoder toward campus vocabulary so "COMSATS" survives. |
+| **TTS**  | `edge-tts` (`en-US-AriaNeural`), Windows SAPI as fallback        | Edge voices need network; SAPI is offline. Groq's own TTS models are unusable on this key — one needs terms accepted, the other is decommissioned. |
+| **Reply**| The RAG pipeline + Groq                                          | Scoped to the member's own vector space plus `shared:campus`. |
+
+The client downsamples to 16 kHz mono WAV, which both the Python VAD and Whisper read directly — no
+uploaded webm to decode.
+
+| Method | Endpoint (on `:8100`) | Body                              | Returns |
+| ------ | --------------------- | --------------------------------- | ------- |
+| GET    | `/voice/health`       | —                                 | engines + VAD settings |
+| POST   | `/voice/stt`          | `multipart` (`audio`)             | `{ text, vad, seconds }` |
+| POST   | `/voice/tts`          | `{ text, voice?, engine? }`       | audio bytes (`audio/mpeg` or `audio/wav`) |
+| POST   | `/voice/chat`         | `multipart` (`audio`, `user_id`)  | `{ transcript, answer, audio, sources, timings }` |
+
+`/voice/chat` is one turn: VAD → Whisper → retrieval → Groq → speech, returning the answer and the
+audio together. The service binds to `127.0.0.1`; point the UI elsewhere with `VITE_VOICE_URL`.
+
+Measured end to end on synthetic speech: **STT 393 ms, LLM 1.28 s, TTS 2.5 s** — roughly 4.3 s per
+spoken turn, with TTS the dominant cost.
+
+> Note: Cloudflare in front of Groq answers `403` (error 1010) to Python's default
+> `urllib` User-Agent, so every outbound request from the Python service sets one explicitly.
 
 ## Data storage
 

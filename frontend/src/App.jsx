@@ -19,6 +19,7 @@ import NotFound from './pages/NotFound.jsx';
 import Payments from './pages/Payments.jsx';
 import Profile from './pages/Profile.jsx';
 import Signup from './pages/Signup.jsx';
+import Voice from './pages/Voice.jsx';
 import './App.css';
 
 export default function App() {
@@ -55,6 +56,7 @@ export default function App() {
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="profile" element={<Profile />} />
           <Route path="knowledge" element={<Knowledge />} />
+          <Route path="voice" element={<Voice />} />
           <Route path="documents" element={<Documents />} />
           <Route path="payments" element={<Payments />} />
           <Route

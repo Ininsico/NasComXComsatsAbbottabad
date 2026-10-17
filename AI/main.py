@@ -24,6 +24,7 @@ the answer step only.
 from __future__ import annotations
 
 import atexit
+import base64
 import os
 import re
 import shutil
@@ -31,11 +32,14 @@ import site
 import subprocess
 import sys
 import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any
 
-from flask import Flask, jsonify, request
+from flask import Flask, Response, jsonify, request
+
+import voice as voice_layer
 
 try:  # optional, only used when the browser calls this service directly
     from flask_cors import CORS
@@ -94,10 +98,25 @@ CHUNK_TARGET = int(os.getenv("RAG_CHUNK_TARGET", "900"))
 CHUNK_OVERLAP = int(os.getenv("RAG_CHUNK_OVERLAP", "150"))
 
 SYSTEM_PROMPT = (
-    "You are the campus assistant for COMSATS Abbottabad. Answer the question using the "
-    "retrieved context below and nothing else. If the context does not contain the answer, say "
-    "so plainly and suggest contacting the administration office. Be concise: at most four short "
-    "sentences, or a short list."
+    "You are the friendly assistant for COMSATS Abbottabad, replying in a chat. "
+    "Keep replies short: one to three sentences, or a short list. Plain text only.\n\n"
+    "Campus notes may be provided below. If they answer the question, answer from them and stay "
+    "faithful to them. If they are unrelated, ignore them completely. If the question is not about "
+    "the campus at all — general knowledge, arithmetic, definitions, small talk — answer it normally "
+    "and helpfully from your own knowledge.\n\n"
+    "Never reply that you cannot answer, and never tell someone to contact an office unless the "
+    "question is specifically about campus business and no note covers it. Even then, share what you "
+    "do know first."
+)
+
+# Spoken replies are read aloud, so they must be short and free of markup.
+VOICE_SYSTEM_PROMPT = (
+    "You are the voice assistant for COMSATS Abbottabad. Your reply will be spoken aloud by a "
+    "text-to-speech engine, so write one or two plain sentences — no lists, no markdown, no "
+    "headings, no emoji, no URLs.\n\n"
+    "If the campus notes answer the question, answer from them. If they are unrelated, ignore them. "
+    "For anything that is not campus business, answer normally from your own knowledge. Never say "
+    "you cannot answer."
 )
 
 app = Flask(__name__)
@@ -322,7 +341,7 @@ database = VectorDatabase()
 # --------------------------------------------------------------------------- #
 
 
-def groq_answer(question: str, context: str) -> dict:
+def groq_answer(question: str, context: str, system: str | None = None) -> dict:
     import json
     import urllib.request
 
@@ -332,12 +351,14 @@ def groq_answer(question: str, context: str) -> dict:
     payload = json.dumps(
         {
             "model": GROQ_MODEL,
-            "temperature": 0.2,
-            "max_tokens": 600,
+            "temperature": 0.3,
+            "max_tokens": 400,
             "messages": [
                 {
                     "role": "system",
-                    "content": f"{SYSTEM_PROMPT}\n\nRetrieved context:\n{context}",
+                    "content": f"{system or SYSTEM_PROMPT}\n\nCampus notes (possibly relevant — ignore them if they are not):\n{context}"
+                    if context
+                    else f"{system or SYSTEM_PROMPT}\n\nNo campus notes matched this question, so answer it from your own knowledge.",
                 },
                 {"role": "user", "content": question},
             ],
@@ -350,12 +371,18 @@ def groq_answer(question: str, context: str) -> dict:
         headers={
             "Content-Type": "application/json",
             "Authorization": f"Bearer {GROQ_API_KEY}",
+            # Cloudflare 1010 blocks urllib's default User-Agent.
+            "User-Agent": "comsats-ai/1.0 (+local)",
         },
         method="POST",
     )
 
-    with urllib.request.urlopen(request_object, timeout=90) as response:
-        body = json.loads(response.read().decode())
+    try:
+        with urllib.request.urlopen(request_object, timeout=90) as response:
+            body = json.loads(response.read().decode())
+    except urllib.error.HTTPError as error:
+        detail = error.read()[:300].decode(errors="ignore")
+        raise RuntimeError(f"Groq rejected the request ({error.code}): {detail}") from error
 
     return {
         "answer": body["choices"][0]["message"]["content"].strip(),
@@ -502,6 +529,205 @@ def ask():
 # --------------------------------------------------------------------------- #
 # Entry point
 # --------------------------------------------------------------------------- #
+
+
+# --------------------------------------------------------------------------- #
+# Voice
+# --------------------------------------------------------------------------- #
+
+
+def _voice_namespaces() -> list[str]:
+    raw = request.form.get("namespaces") or ""
+    items = [part.strip() for part in raw.split(",") if part.strip()]
+    user_id = (request.form.get("user_id") or "").strip()
+
+    if user_id:
+        personal = f"user:{user_id}"
+        if personal not in items:
+            items.insert(0, personal)
+
+    if "shared:campus" not in items:
+        items.append("shared:campus")
+
+    return items
+
+
+def _read_upload():
+    uploaded = request.files.get("audio")
+
+    if uploaded is None:
+        return None, (jsonify({"error": "Attach the recording as form field 'audio'"}), 400)
+
+    data = uploaded.read()
+
+    if len(data) < 800:
+        return None, (jsonify({"error": "That recording is too short to use"}), 400)
+
+    return data, None
+
+
+def _prepare_audio(raw: bytes):
+    """Trim silence with the VAD when the upload is WAV.
+
+    Returns (audio_for_stt, vad_report, elapsed_ms). Browsers that send webm/ogg
+    skip the VAD but are still transcribed — Whisper decodes them directly.
+    """
+    started = time.time()
+
+    try:
+        samples, rate, _ = voice_layer.read_wav(raw)
+        samples, rate = voice_layer.resample_to_target(samples, rate)
+        analysis = voice_layer.analyse_speech(samples, rate)
+        trimmed = voice_layer.trim_to_speech(samples, rate, analysis)
+        prepared = voice_layer.write_wav(trimmed, rate)
+
+        vad = {
+            "segments": len(analysis["segments"]),
+            "speech_seconds": analysis["speech_seconds"],
+            "noise_db": analysis["noise_db"],
+            "threshold_db": analysis["threshold_db"],
+            "trimmed_seconds": round(len(trimmed) / rate, 2),
+        }
+    except ValueError:
+        prepared = raw
+        vad = {"segments": 0, "note": "not 16-bit WAV; server-side VAD skipped"}
+
+    return prepared, vad, round((time.time() - started) * 1000)
+
+
+@app.get("/voice/health")
+def voice_health():
+    return jsonify(
+        {
+            "stt": {
+                "provider": "groq-whisper",
+                "model": voice_layer.STT_MODEL,
+                "configured": bool(voice_layer.groq_api_key()),
+            },
+            "tts": voice_layer.tts_engine_status(),
+            "vad": {
+                "frame_ms": voice_layer.VAD_FRAME_MS,
+                "min_speech_ms": voice_layer.VAD_MIN_SPEECH_MS,
+                "hangover_ms": voice_layer.VAD_HANGOVER_MS,
+                "threshold_db": voice_layer.VAD_THRESHOLD_DB,
+            },
+            "target_sample_rate": voice_layer.TARGET_SAMPLE_RATE,
+        }
+    )
+
+
+@app.post("/voice/stt")
+def voice_stt():
+    raw, error = _read_upload()
+    if error:
+        return error
+
+    prepared, vad, vad_ms = _prepare_audio(raw)
+
+    try:
+        result = voice_layer.transcribe(prepared)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 502
+
+    return jsonify({**result, "vad": vad, "vad_ms": vad_ms})
+
+
+@app.post("/voice/tts")
+def voice_tts():
+    body = request.get_json(silent=True) or {}
+    text = str(body.get("text") or "").strip()
+
+    if not text:
+        return jsonify({"error": "Pass some 'text' to speak"}), 400
+
+    try:
+        audio, mime, engine = voice_layer.synthesize(
+            text,
+            voice=body.get("voice"),
+            prefer=body.get("engine"),
+        )
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 503
+
+    return Response(
+        audio,
+        mimetype=mime,
+        headers={"X-TTS-Engine": engine, "Cache-Control": "no-store"},
+    )
+
+
+@app.post("/voice/chat")
+def voice_chat():
+    """One conversational turn: record -> VAD -> STT -> RAG -> answer -> speech."""
+    raw, error = _read_upload()
+    if error:
+        return error
+
+    if not GROQ_API_KEY:
+        return jsonify({"error": "GROQ_API_KEY is not set"}), 503
+
+    namespaces = _voice_namespaces()
+    timings: dict[str, Any] = {}
+
+    prepared, vad, vad_ms = _prepare_audio(raw)
+    timings["vad_ms"] = vad_ms
+
+    started = time.time()
+
+    try:
+        stt = voice_layer.transcribe(prepared)
+    except Exception as exc:
+        return jsonify({"error": f"Speech recognition failed: {exc}"}), 502
+
+    timings["stt_ms"] = round((time.time() - started) * 1000)
+    transcript = stt["text"]
+
+    if len(transcript) < 2:
+        return jsonify({"error": "I did not catch any speech in that recording", "vad": vad}), 422
+
+    started = time.time()
+
+    try:
+        hits = database.query(namespaces, transcript, 3)
+        context = "\n\n".join(
+            f"[{index + 1}] ({hit['title']}) {hit['text']}" for index, hit in enumerate(hits)
+        )
+        result = groq_answer(transcript, context, system=VOICE_SYSTEM_PROMPT)
+    except Exception as exc:
+        return jsonify({"error": f"Answering failed: {exc}"}), 502
+
+    timings["llm_ms"] = round((time.time() - started) * 1000)
+    answer = result["answer"]
+
+    started = time.time()
+    encoded = None
+    mime = None
+    engine = None
+
+    try:
+        audio, mime, engine = voice_layer.synthesize(answer)
+        encoded = base64.b64encode(audio).decode("ascii")
+    except Exception as exc:
+        timings["tts_error"] = str(exc)
+
+    timings["tts_ms"] = round((time.time() - started) * 1000)
+
+    return jsonify(
+        {
+            "transcript": transcript,
+            "answer": answer,
+            "model": result["model"],
+            "sources": [
+                {"title": hit["title"], "namespace": hit["namespace"], "score": hit["score"]}
+                for hit in hits
+            ],
+            "audio": encoded,
+            "audio_mime": mime,
+            "tts_engine": engine,
+            "vad": vad,
+            "timings": timings,
+        }
+    )
 
 
 # --------------------------------------------------------------------------- #

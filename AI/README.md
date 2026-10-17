@@ -6,7 +6,8 @@ embedding model itself lives in `main.py`.
 
 ```
 AI/
-├── main.py             Python service: semantic embeddings, Chroma search, Groq answers
+├── main.py             Flask service: embeddings, Chroma search, Groq answers, voice
+├── voice.py            VAD, Whisper STT (Groq) and TTS (edge-tts / Windows SAPI)
 ├── PROMPTS.md          reusable prompts, including the WhatsApp QR pairing flow
 ├── src/
 │   ├── semanticEmbedder.js  HTTP client for main.py (bge-small, 384 dimensions)
@@ -21,6 +22,28 @@ AI/
 │   └── index.js        public surface
 └── data/               Chroma data and fallback vectors (gitignored)
 ```
+
+## Voice
+
+`voice.py` is used by `main.py` for the `/voice/*` routes:
+
+- **VAD** — energy-based on 16-bit PCM. The noise floor is the 10th-percentile frame, the gate sits
+  8 dB above it (never below −38 dBFS), frames are 30 ms, and a 350 ms hangover stops short gaps
+  splitting an utterance. `analyse_speech()` reports segments; `trim_to_speech()` drops silence
+  before transcription.
+- **STT** — Groq `whisper-large-v3-turbo` via multipart, with a campus-vocabulary prompt. ~400–650 ms.
+- **TTS** — `edge-tts` neural voices (network) with Windows SAPI via System.Speech as an offline
+  fallback. Text reaches PowerShell base64-encoded so quotes and unicode survive.
+
+```bash
+pip install edge-tts        # optional: better TTS; SAPI works without it
+```
+
+Groq's own TTS models are not usable on this key — one requires the org admin to accept terms, the
+other is decommissioned. Hence the local engines.
+
+Also note: Cloudflare in front of Groq returns `403` (error 1010) for Python's default `urllib`
+User-Agent, so every outbound request sets `User-Agent` explicitly.
 
 ## Vector spaces are isolated per member
 

@@ -3,6 +3,12 @@ const BASE_URL = (import.meta.env.VITE_API_URL ?? 'http://localhost:4000').repla
 /** The API this browser is actually talking to — surfaced in the UI for debugging. */
 export const API_BASE_URL = BASE_URL;
 
+/** The Python AI service (semantic embeddings + voice). */
+export const VOICE_BASE_URL = (import.meta.env.VITE_VOICE_URL ?? 'http://127.0.0.1:8100').replace(
+  /\/+$/,
+  '',
+);
+
 export class ApiError extends Error {
   constructor(message, status, fields) {
     super(message);
@@ -121,3 +127,34 @@ export const api = {
   whatsappSend: (token, to, text) =>
     request('/api/whatsapp/send', { method: 'POST', body: { to, text }, token }),
 };
+
+/** Which STT model, TTS engine and VAD settings the Python service is using. */
+export async function voiceHealth() {
+  const response = await fetch(`${VOICE_BASE_URL}/voice/health`);
+
+  if (!response.ok) {
+    throw new ApiError('The voice service is not responding', response.status);
+  }
+
+  return response.json();
+}
+
+/**
+ * One conversational turn: the recording goes to the Python service, which runs
+ * VAD, Whisper, retrieval and TTS, and returns the transcript, answer and audio.
+ */
+export async function voiceChat({ audio, userId }) {
+  const form = new FormData();
+  form.append('audio', audio, 'speech.wav');
+  form.append('user_id', userId);
+
+  let response;
+
+  try {
+    response = await fetch(`${VOICE_BASE_URL}/voice/chat`, { method: 'POST', body: form });
+  } catch {
+    throw new ApiError('Cannot reach the voice service. Start it with: npm run embed', 0);
+  }
+
+  return parse(response);
+}
