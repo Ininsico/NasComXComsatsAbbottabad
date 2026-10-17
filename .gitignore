@@ -39,6 +39,12 @@ backend/data/whatsapp-session/
 backend/data/whatsapp-qr.png
 backend/.wwebjs_cache/
 
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
 # Test / coverage
 coverage/
 .nyc_output/
