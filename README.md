@@ -352,15 +352,25 @@ service falls back to an in-process lock, which also prevents overlap.
 ## Deployment
 
 Everything ships as containers and deploys through GitHub Actions — see
-[deploy/README.md](deploy/README.md).
+[deploy/README.md](deploy/README.md) for the full runbook.
 
 | File | What it does |
 | --- | --- |
 | `docker-compose.yml` | frontend, backend, ai, chroma and the official RabbitMQ image |
 | `deploy/docker/*.Dockerfile` | one image per service |
 | `deploy/scripts/bootstrap-vm.sh` | prepares a host: Docker, vhost, certificate |
-| `.github/workflows/ci.yml` | lint, build, boot the API, import the AI, build all images |
-| `.github/workflows/deploy.yml` | builds to GHCR, then pulls and restarts on the server |
+| `deploy/scripts/install-runner.sh` | adds self-hosted Actions runners |
+| `.github/workflows/ci.yml` | lint, build, boot the API, import the AI, build images |
+| `.github/workflows/deploy.yml` | builds on the host and restarts the stack in place |
+
+The workflow runs on a self-hosted runner **on the deployment host**, so a push to
+`main` builds the images there and restarts the stack in place — no registry, no SSH,
+no files copied over. Progress is reported per stage and per container, and
+[/deploy](https://nascon.artdevelopers.site/deploy) shows it; while a deploy runs that
+panel takes over the screen.
+
+Data survives every deploy in named volumes: the vector database, uploaded documents and
+accounts, and the linked WhatsApp session (so it never asks for a QR scan again).
 
 Live at <https://nascon.artdevelopers.site>.
 

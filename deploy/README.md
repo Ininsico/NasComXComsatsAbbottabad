@@ -1,31 +1,43 @@
 # Deployment
 
-Everything the app needs to run in production lives here, and everything runs in
-Docker. `/opt/nascon` on the server is the whole repository plus a `.env` that never
-leaves the machine.
+Everything runs in Docker, and every deploy goes through GitHub Actions. There is no
+registry hop, no `scp`, and no SSH in the pipeline: the workflow runs on a self-hosted
+runner **on the deployment host itself**, so it builds the images there and restarts the
+stack in place.
+
+- Live site: <https://nascon.artdevelopers.site>
+- Server: `169.58.119.44`, repository checked out at `/opt/nascon`
+- Deployment UI: <https://nascon.artdevelopers.site/deploy> (also takes over the screen
+  while a deploy is running)
+
+## Layout
 
 ```
-docker-compose.yml          the stack (at the repo root — that is where compose looks)
+docker-compose.yml              the stack — at the repo root, so `context: .` is the root
 deploy/
-├── .env.example            every variable the stack reads
+├── .env.example                every variable the stack reads
 ├── docker/
-│   ├── frontend.Dockerfile     Vite build → nginx, which also routes /api and /voice
-│   ├── backend.Dockerfile      Express API
-│   ├── ai.Dockerfile           Flask: embeddings, voice, audio queue worker
-│   ├── chroma.Dockerfile       vector database, pinned to the client's version
-│   └── frontend-nginx.conf     SPA fallback + reverse proxies
+│   ├── frontend.Dockerfile         Vite build → nginx, which also routes /api and /voice
+│   ├── backend.Dockerfile          Express API + Chromium for the WhatsApp bridge
+│   ├── ai.Dockerfile               Flask: embeddings, voice, audio queue worker
+│   ├── chroma.Dockerfile           vector database, pinned to the backend client's version
+│   └── frontend-nginx.conf         SPA fallback + reverse proxies
 ├── nginx/
-│   └── nascon.artdevelopers.site.conf   host vhost (TLS + proxy to 127.0.0.1:8085)
+│   └── nascon.artdevelopers.site.conf    host vhost: TLS + proxy to 127.0.0.1:8085
 └── scripts/
-    └── bootstrap-vm.sh     Docker, app directory, vhost, certificate — idempotent
+    ├── bootstrap-vm.sh         Docker, app directory, vhost, certificate — idempotent
+    ├── install-runner.sh       adds self-hosted runners for Actions
+    ├── announce.sh             reports deploy progress to the site
+    ├── snapshot-containers.sh  reports per-container health to the site
+    └── authorize-deploy-key.sh optional: gives a human key-based SSH access
 ```
 
 ## Architecture
 
 ```
-                    ┌─────────────────────────────── host nginx (443, certbot) ──┐
-browser ──TLS──▶    │  nascon.artdevelopers.site → 127.0.0.1:8085                  │
-                    └──────────────────────────────────────────────────────────────┘
+                    ┌────────────────────────── host nginx (443, certbot) ──┐
+browser ──TLS──▶    │  nascon.artdevelopers.site → 127.0.0.1:8085            │
+                    └────────────────────────────────────────────────────────┘
                                               │
                                     frontend container (nginx)
                                     ├── /            → the SPA
@@ -36,129 +48,225 @@ browser ──TLS──▶    │  nascon.artdevelopers.site → 127.0.0.1:8085 
                     ▼                                                    ▼
               backend (Express)                                      ai (Flask)
               ├── chroma:8000                                        ├── chroma:8000
-              ├── ai:8100 (embeddings)                               └── rabbitmq:5672
+              ├── ai:8100 (embeddings, voice)                        └── rabbitmq:5672
               └── Cloudinary, Groq, Binance
 ```
 
-Only `frontend` publishes a port, and only on `127.0.0.1`. RabbitMQ, Chroma and the
-API are reachable inside the compose network alone — no AMQP or database port is
-exposed to the internet.
+Only `frontend` publishes a port, and only on `127.0.0.1`. RabbitMQ, Chroma and the API
+are reachable inside the compose network alone — no AMQP or database port faces the
+internet.
 
-## Deploying
-
-### First time on a host
+## First-time setup on a host
 
 ```bash
-git clone <repo> /root/nascon-src && cd /root/nascon-src
+git clone https://github.com/Ininsico/NasComXComsatsAbbottabad.git /root/nascon-src
+cd /root/nascon-src
 
 sudo DOMAIN=nascon.artdevelopers.site \
      CERTBOT_EMAIL=you@example.com \
      bash deploy/scripts/bootstrap-vm.sh
 
-# it stops and tells you to fill in /opt/nascon/.env
-$EDITOR /opt/nascon/.env
+# it stops and asks for the secrets
+sudo -e /opt/nascon/.env
 sudo bash deploy/scripts/bootstrap-vm.sh      # re-run: now it finishes
 ```
 
 `bootstrap-vm.sh` installs Docker, creates `/opt/nascon`, installs the nginx vhost and
-issues the certificate. It is safe to re-run and touches nothing else on the host.
+issues the certificate. It is idempotent and touches nothing else on the host.
 
-### Bringing the stack up
+Then install the runners (see below), and the next push to `main` deploys.
+
+### Runners
+
+This account is **refused GitHub-hosted runners**. Every job — including one whose only
+step is `uname -a` — is aborted after about two seconds with `runner_id: 0`, zero steps
+and no log, on every workflow, while GitHub reports Actions fully operational. That is
+an account-level block, not something a workflow file can fix.
+
+Self-hosted runners are unaffected, so this host runs three of them, all labelled
+`nascon`:
+
+| Runner | Directory |
+| --- | --- |
+| `nascon-vm` | `/opt/actions-runner` |
+| `nascon-vm-2` | `/opt/actions-runner-2` |
+| `nascon-vm-3` | `/opt/actions-runner-3` |
+
+They run as root because the deploy needs Docker, and each is a systemd service:
 
 ```bash
-cd /opt/nascon
-docker compose --env-file .env up -d --build     # build on the host
-docker compose --env-file .env ps
-docker compose --env-file .env logs -f ai
+systemctl list-units 'actions.runner.*'
+systemctl restart actions.runner.Ininsico-NasComXComsatsAbbottabad.nascon-vm-2.service
+
+# add another
+TOKEN=$(gh api -X POST repos/Ininsico/NasComXComsatsAbbottabad/actions/runners/registration-token --jq .token)
+sudo GH_RUNNER_TOKEN="$TOKEN" bash deploy/scripts/install-runner.sh nascon-vm-4
 ```
 
-### Through GitHub Actions (the normal path)
+More runners means CI's jobs run in parallel; it does **not** parallelise deploys, which
+are serialised by the workflow's concurrency group.
 
-`.github/workflows/deploy.yml` builds all four images, pushes them to GHCR and then
-tells the server to pull and restart. The server never builds.
+## How a deploy works
 
-Add these repository secrets:
+Push to `main` (or run the workflow manually):
 
-| Secret | What it is |
-| --- | --- |
-| `VM_HOST` | the server's address |
-| `VM_USER` | a user that can run docker |
-| `VM_SSH_KEY` | that user's private key |
-| `GHCR_TOKEN` | a PAT with `read:packages` so the server can pull private images (or make the packages public and skip it) |
+```
+actions/checkout
+  ↓
+check /opt/nascon/.env exists          → announce "preparing"
+  ↓
+                                       → announce "announced"
+docker compose build                   → announce "building"     (15%)
+  ↓
+docker compose up -d                   → announce "rolling"      (70%)
+  ↓
+wait for every container to be healthy → announce "health"       (82%)
+   every 5s: snapshot containers + announce, so rows go green as each one comes up
+  ↓
+verify through the public domain       → announce "verifying"    (92%)
+   SPA serves #root, /api/health ok, /voice/health ok (STT configured, queue worker alive)
+  ↓
+                                       → announce "done"         (100%)
+```
 
-`ci.yml` runs on every push and PR: frontend lint + build, backend syntax check and a
-real boot of `/api/health`, the Python modules import and the VAD is exercised, and all
-four images are built.
+If anything fails, the last step reports `failed` instead, so the page never claims a
+broken deploy succeeded.
+
+- **Concurrency:** `group: deploy-production` means exactly one deploy runs at a time,
+  even with three runners. Two `docker compose up -d` calls would otherwise fight.
+- **Images** are tagged with the commit (`IMAGE_TAG=<sha>`), so a rollback is just a
+  different tag.
+- **Layer caching** is why this is quick: the runner is the production host, so the
+  build cache is already there.
+
+### The progress UI
+
+`GET /api/deploy/status` is public and returns the current stage, a percentage, the
+commit, and a row per container. `POST` accepts updates and only exists when
+`DEPLOY_STATUS_TOKEN` is set — the pipeline reads that token from `/opt/nascon/.env`, so
+a normal local checkout has no writable endpoint.
+
+While a deploy is running, a panel covers the screen (z-index above the site header)
+with the bar, the stage list and one row per container. `/deploy` renders the same panel
+on its own page at any time. A notice older than 30 minutes is ignored, so a killed
+deploy cannot pin the site in "deploying" forever; `DELETE /api/deploy/status` clears it
+by hand.
+
+## What persists
+
+Every deploy recreates containers but keeps these named volumes:
+
+| Volume | Mount | Holds |
+| --- | --- | --- |
+| `nascon_chroma-data` | `/data` (chroma) | the vector database — collections survive deploys |
+| `nascon_backend-data` | `/app/data` (backend) | `users.json`, `documents.json`, `profiles.json`, `deploy-status.json`, **`whatsapp-session/`** |
+| `nascon_ai-data` | `/app/data` (ai) | embedding model cache, audio spool, local vector fallback |
+| `nascon_rabbitmq-data` | `/var/lib/rabbitmq` | queue state |
+
+`docker compose down` keeps them; `down -v` destroys them (and you would lose the
+WhatsApp link and every stored document — don't).
+
+### WhatsApp survives
+
+The bridge runs Chromium **in the container**, and its linked session lives in the
+`backend-data` volume, so a deploy never asks for a QR scan again.
+
+- Chromium comes from the image (`/usr/bin/chromium`), not from puppeteer's download.
+- `WHATSAPP_CHROME_PATH=/usr/bin/chromium`.
+- The session is `whatsapp-session/session-comsats-portal`, with
+  `whatsapp-session/.linked.json` recording the linked number.
+- **Chromium's `SingletonLock` is cleared before every launch.** It names the host and
+  pid that created it, and a recreated container has a different hostname — without
+  clearing it Chromium refuses to start and the client dies silently.
+- `WHATSAPP_ENABLED` can stay `false`: the client starts automatically whenever a linked
+  session is present.
+
+The client logs `[whatsapp] connected as 923278593583@c.us` when it is up. To move a
+session to another machine, copy only `session-comsats-portal/Default/{IndexedDB,
+Local Storage, Network, WebStorage, Preferences}` plus `.linked.json` — about 3 MB.
+The other ~175 MB is Chromium cache and is recreated on first load.
 
 ## The audio queue
 
-Voice is the one part of the system that cannot run twice at once: two recordings
-would fight over the same Groq quota and the same speaker. RabbitMQ is the
-arbitrator.
+Voice is the one part that cannot run twice at once: two recordings would fight over the
+same Groq quota and the same speaker. RabbitMQ arbitrates.
 
 - **One consumer, `prefetch_count=1`.** `ai` publishes each turn to `voice.audio` and
-  consumes it itself with a single worker. The broker hands that worker one unacked
-  message at a time, so a second upload waits in the queue instead of starting.
-- **This is why `ai` must never be scaled.** A second replica would be a second
-  consumer and the guarantee is gone. The service is deliberately not replicated.
-- **Claim check.** A recording is ~450 KB base64-encoded, and pushing that through
-  the broker cost 4.5 s of pickup latency on a 330 kbps uplink versus 0.3 s for a
-  small message. So the audio is written to a spool file in the `ai-data` volume and
-  only its id travels in the message. The spool is drained as jobs complete and swept
-  on startup.
-- **RPC replies.** The worker publishes the result back to the caller's exclusive
-  reply queue, correlated by id, with a `RABBITMQ_JOB_TIMEOUT` ceiling.
-- **It degrades safely.** No reachable broker → `enabled` is false and turns are
-  processed inline behind a process-wide lock, which also guarantees no overlap.
+  consumes it with a single worker. The broker hands that worker one unacked message at
+  a time, so a second upload waits instead of starting.
+- **`ai` must never be scaled.** A second replica would be a second consumer and the
+  guarantee disappears. It is deliberately not replicated anywhere.
+- **Claim check.** A recording is ~450 KB base64-encoded, and pushing that through a
+  remote broker cost 4.5 s of pickup latency on a 330 kbps uplink against 0.3 s for a
+  small message. The audio goes to a spool file in `ai-data` and only its id travels in
+  the message; the spool drains as jobs complete and is swept on startup. On this host,
+  with the broker on loopback, queue wait measures **3–5 ms**.
+- **RPC replies** go to the caller's exclusive reply queue, correlated by id, capped by
+  `RABBITMQ_JOB_TIMEOUT`.
+- **It degrades safely.** With no reachable broker, `enabled` is false and turns run
+  inline behind a process-wide lock, which also prevents overlap.
 
-Queue health is visible at `GET /voice/queue` (depth, in-flight, job counters, spool
-file count) and is included in `/voice/health`.
-
-To watch the broker:
+Inspect it at `GET /voice/queue` (depth, in-flight, counters, spool files), also
+included in `/voice/health`. The management UI is not published — tunnel it:
 
 ```bash
-ssh -L 15672:127.0.0.1:15672 root@<vm>    # then http://localhost:15672
+ssh -L 15672:127.0.0.1:15672 root@169.58.119.44    # then http://localhost:15672
 ```
 
-## Environment
+## Environment and secrets
 
-`deploy/.env.example` documents every variable. Compose reads it from
-`/opt/nascon/.env`; the containers receive real environment variables, so nothing
-depends on a `.env` file inside an image.
+`deploy/.env.example` documents every variable. Compose reads `/opt/nascon/.env`; the
+containers receive real environment variables, so nothing depends on a `.env` file
+inside an image, and nothing secret is ever committed or passed through CI.
 
-Two values are mandatory and compose refuses to start without them:
-`JWT_SECRET` and `RABBITMQ_PASSWORD`. `GROQ_API_KEY` is required by the `ai` service.
+Required: `JWT_SECRET` and `RABBITMQ_PASSWORD` (compose refuses to start without them),
+`GROQ_API_KEY` (the `ai` service), `DEPLOY_STATUS_TOKEN` (progress reporting).
 
-Locally (`npm run embed` etc.) the backend reads `backend/.env` instead — see
-`backend/.env.example`. The only difference is that `RABBITMQ_URL` points at whatever
-broker you are using, and `CHROMA_AUTOSTART=true` lets the Python service own Chroma
-as a child process.
+Repository secrets (`VM_HOST`, `VM_USER`, `VM_SSH_KEY`, `GHCR_TOKEN`) are **no longer
+used** by the pipeline; they can be deleted. Local development reads `backend/.env`
+instead — see `backend/.env.example`.
 
 ## Operating it
 
 ```bash
 cd /opt/nascon
 
-docker compose --env-file .env ps                  # what is running
-docker compose --env-file .env logs -f backend     # follow one service
-docker compose --env-file .env restart ai          # bounce one service
-docker compose --env-file .env down                # stop everything
+docker compose --env-file .env ps                     # what is running
+docker compose --env-file .env logs -f backend        # follow one service
+docker compose --env-file .env restart ai             # bounce one service
+docker compose --env-file .env down                   # stop (volumes are kept)
 
 # roll back to a previous build
 IMAGE_TAG=<previous-sha> docker compose --env-file .env up -d
+
+# deploy by hand, without Actions
+docker compose --env-file .env build && docker compose --env-file .env up -d
 ```
 
-## Known constraints
+## Troubleshooting
 
-- **`ai` is single-replica by design.** See above.
-- **WhatsApp is off in containers.** It needs Chromium and a one-time QR scan per
-  environment. `backend.Dockerfile` sets `PUPPETEER_SKIP_DOWNLOAD=true`; to enable it,
-  install Chromium in the image, set `WHATSAPP_CHROME_PATH`, mount a session volume and
-  set `WHATSAPP_ENABLED=true`.
-- **Binance stays read-only.** The key must have "Enable Reading" only, with an IP
-  allowlist. The code has no order, transfer or withdrawal path.
-- **The certificate is issued by certbot** through an HTTP-01 webroot challenge, which
-  works with Cloudflare proxying because Cloudflare passes `/.well-known/acme-challenge`
-  through to the origin.
+Every entry here is something that actually happened on this host.
+
+| Symptom | Cause | Fix |
+| --- | --- | --- |
+| Every workflow job fails in ~2 s, `runner_id: 0`, no steps | Account blocked from GitHub-hosted runners | Use the self-hosted runners |
+| `RAG: semantic embeddings unavailable — falling back` | Backend indexed before `ai` was listening; the store decides once and keeps the fallback | `depends_on: ai: service_healthy`, and `seedCampusKnowledge` now waits for the service |
+| `[chromium] <defunct>` and no WhatsApp line | `SingletonLock` from the old container's hostname | Cleared before launch in `whatsapp.js` |
+| Deploy verification fails with 502 on `/voice/health` | It checked seconds after the container was created, while the model was still loading | The pipeline waits for every container to report healthy first |
+| `nginx: host not found in upstream "backend"` | nginx resolves upstreams at startup | Upstreams are resolved at request time via Docker's resolver |
+| Deploys crawl | CI and the deploy built the same four images at once on the same machine | CI builds images on pull requests only |
+| The site says "deploying" with nothing running | A deploy died before clearing the notice | It expires after 30 minutes, or `DELETE /api/deploy/status` |
+| `git push` denied for the account | The authenticated account lacks push access | Use an SSH key registered on an account with access |
+
+## Constraints
+
+- **`ai` is single-replica by design** — see the audio queue.
+- **Binance stays read-only.** The key must have "Enable Reading" only plus an IP
+  allowlist; the code has no order, transfer or withdrawal path.
+- **The certificate is certbot's**, issued through an HTTP-01 webroot challenge. That
+  works with Cloudflare proxying because Cloudflare passes
+  `/.well-known/acme-challenge` through to the origin.
 - **The host is shared.** Other sites are served by the same nginx; this vhost only adds
   one `server_name` and never modifies the others.
+- **A cold deploy takes about a minute longer** than a warm one, because the backend now
+  waits for the AI service to be healthy before it starts.
