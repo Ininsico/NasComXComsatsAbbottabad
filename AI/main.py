@@ -23,8 +23,16 @@ the answer step only.
 
 from __future__ import annotations
 
+import atexit
 import os
 import re
+import shutil
+import site
+import subprocess
+import sys
+import time
+import urllib.request
+from pathlib import Path
 from typing import Any
 
 from flask import Flask, jsonify, request
@@ -70,6 +78,14 @@ CHROMA_PREFIX = os.getenv("CHROMA_COLLECTION_PREFIX", "sem-")
 CHROMA_TENANT = os.getenv("CHROMA_TENANT", "default_tenant")
 CHROMA_DATABASE = os.getenv("CHROMA_DATABASE", "default_database")
 
+# This service owns the vector database too: `python main.py` starts Chroma as a
+# child process when it is not already listening, and stops it on exit.
+BASE_DIR = Path(__file__).resolve().parent
+DATA_DIR = BASE_DIR / "data"
+CHROMA_DATA_DIR = Path(os.getenv("CHROMA_DATA_DIR", DATA_DIR / "chroma"))
+CHROMA_LOG = DATA_DIR / "chroma.log"
+CHROMA_AUTOSTART = os.getenv("CHROMA_AUTOSTART", "true").lower() not in ("0", "false", "no")
+
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 GROQ_ENDPOINT = os.getenv("GROQ_ENDPOINT", "https://api.groq.com/openai/v1/chat/completions")
@@ -88,6 +104,13 @@ app = Flask(__name__)
 
 if CORS is not None:
     CORS(app)
+
+# Print immediately whether the output is a terminal, a pipe or a log file.
+for stream in (sys.stdout, sys.stderr):
+    try:
+        stream.reconfigure(line_buffering=True)
+    except Exception:
+        pass
 
 
 # --------------------------------------------------------------------------- #
@@ -481,30 +504,176 @@ def ask():
 # --------------------------------------------------------------------------- #
 
 
-def banner() -> None:
-    print("=" * 72)
-    print("  COMSATS Abbottabad — semantic embedding service")
-    print("=" * 72)
-    print(f"  listen        http://{EMBED_HOST}:{EMBED_PORT}")
-    print(f"  embedder      {EMBED_MODEL} (fastembed / ONNX, no torch)")
+# --------------------------------------------------------------------------- #
+# Chroma process management
+# --------------------------------------------------------------------------- #
 
-    if embedder.load():
-        print(f"                dimensions={embedder.dimensions}  kind={embedder.kind}")
+_chroma_process: "subprocess.Popen[bytes] | None" = None
+
+
+def chroma_heartbeat(timeout: float = 1.5) -> bool:
+    """True when something is already serving the Chroma HTTP API."""
+    try:
+        url = f"http://{CHROMA_HOST}:{CHROMA_PORT}/api/v2/heartbeat"
+        with urllib.request.urlopen(url, timeout=timeout):
+            return True
+    except Exception:
+        return False
+
+
+def find_chroma_binary() -> str | None:
+    """Locate the `chroma` console script, wherever pip put it."""
+    found = shutil.which("chroma")
+    if found:
+        return found
+
+    exe_name = "chroma.exe" if os.name == "nt" else "chroma"
+    candidates: list[Path] = [
+        Path(sys.executable).parent / "Scripts" / exe_name,
+        Path(sys.executable).parent / exe_name,
+    ]
+
+    try:
+        userbase = Path(site.getuserbase())
+        candidates.append(
+            userbase / f"Python{sys.version_info.major}{sys.version_info.minor}" / "Scripts" / exe_name
+        )
+        candidates.append(userbase / "Scripts" / exe_name)
+
+        for candidate in candidates:
+            if candidate.exists():
+                return str(candidate)
+
+        # pip installed it under a user site directory with a version we did not guess
+        for hit in sorted(userbase.glob(f"Python*/Scripts/{exe_name}")):
+            return str(hit)
+    except Exception:
+        pass
+
+    for candidate in candidates:
+        if candidate.exists():
+            return str(candidate)
+
+    return None
+
+
+def ensure_chroma() -> bool:
+    """Start Chroma if it is not already listening. Returns True when we own it."""
+    global _chroma_process
+
+    if chroma_heartbeat():
+        return False
+
+    if not CHROMA_AUTOSTART:
+        return False
+
+    binary = find_chroma_binary()
+
+    if binary is None:
+        print("  chroma        not running, and the `chroma` command was not found")
+        print("                pip install chromadb")
+        return False
+
+    CHROMA_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+    log = open(CHROMA_LOG, "ab", buffering=0)
+    command = [binary, "run", "--path", str(CHROMA_DATA_DIR), "--port", str(CHROMA_PORT)]
+
+    try:
+        _chroma_process = subprocess.Popen(  # noqa: S603 - fixed argv, no shell
+            command,
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            cwd=str(BASE_DIR),
+        )
+    except OSError as exc:
+        print(f"  chroma        could not start: {exc}")
+        return False
+
+    print(f"  chroma        starting {binary}")
+    print(f"                log: {CHROMA_LOG}")
+
+    deadline = time.time() + 60
+
+    while time.time() < deadline:
+        if chroma_heartbeat():
+            return True
+
+        if _chroma_process.poll() is not None:
+            print("  chroma        exited during startup — see the log above")
+            _chroma_process = None
+            return False
+
+        time.sleep(1)
+
+    print("  chroma        timed out waiting for it to answer")
+    return False
+
+
+def stop_chroma() -> None:
+    """Stop Chroma only if this process started it."""
+    global _chroma_process
+
+    if _chroma_process is None or _chroma_process.poll() is not None:
+        _chroma_process = None
+        return
+
+    print("  stopping chroma...")
+    _chroma_process.terminate()
+
+    try:
+        _chroma_process.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        _chroma_process.kill()
+
+    _chroma_process = None
+
+
+# --------------------------------------------------------------------------- #
+# Entry point
+# --------------------------------------------------------------------------- #
+
+
+def banner(started_chroma: bool, embedder_ready: bool) -> None:
+    print("=" * 72)
+    print("  COMSATS Abbottabad — AI service (embeddings + vectors)")
+    print("=" * 72)
+
+    if embedder_ready:
+        print(f"  embedder      {embedder.model_name}")
+        print(f"                {embedder.dimensions} dimensions · kind={embedder.kind}")
     else:
-        print(f"                UNAVAILABLE: {embedder.error}")
+        print(f"  embedder      UNAVAILABLE: {embedder.error}")
         print("                pip install fastembed")
 
     print(f"  chroma        http://{CHROMA_HOST}:{CHROMA_PORT}  prefix={CHROMA_PREFIX}")
     print(f"                {'reachable' if database.healthy() else 'NOT reachable'}")
+    print(f"                {'started by this process' if started_chroma else 'already running'}")
+
     print(f"  groq          {GROQ_MODEL}  {'configured' if GROQ_API_KEY else 'NO API KEY'}")
+    print(f"  listen        http://{EMBED_HOST}:{EMBED_PORT}")
     print("-" * 72)
     print("  POST /embed    {\"texts\": [\"...\"]}")
     print("  POST /ingest   {\"namespace\", \"sourceId\", \"title\", \"text\"}")
     print("  POST /search   {\"query\", \"namespaces\": [...], \"topK\"}")
     print("  POST /ask      {\"query\", \"namespaces\": [...]}")
     print("=" * 72)
+    print("  Ctrl+C stops both this service and the Chroma process it started.")
+    print("=" * 72)
 
 
 if __name__ == "__main__":
-    banner()
-    app.run(host=EMBED_HOST, port=EMBED_PORT, debug=False, threaded=True)
+    atexit.register(stop_chroma)
+
+    started_chroma = ensure_chroma()
+    embedder_ready = embedder.load()
+
+    banner(started_chroma, embedder_ready)
+
+    try:
+        app.run(host=EMBED_HOST, port=EMBED_PORT, debug=False, threaded=True)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        stop_chroma()

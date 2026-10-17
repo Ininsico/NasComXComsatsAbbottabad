@@ -65,6 +65,15 @@ pip install flask flask-cors fastembed chromadb
 python main.py
 ```
 
+One command runs the whole Python side. `main.py` finds the `chroma` CLI wherever pip put it,
+starts it as a child process on `CHROMA_PORT` (8000) if nothing is already listening, waits for its
+heartbeat, and stops it again when you Ctrl+C. Chroma's output goes to `AI/data/chroma.log`, so this
+console stays readable.
+
+- `CHROMA_AUTOSTART=false` — do not manage Chroma; expect it to be running already.
+- `CHROMA_DATA_DIR`, `CHROMA_PORT`, `CHROMA_HOST` — where Chroma stores data and listens.
+- If Chroma is already up, `main.py` notices and leaves it alone.
+
 ```
 GET  /health    embedder model, dimensions and Chroma status
 POST /embed     {"texts": ["...", "..."]}                  -> dense vectors

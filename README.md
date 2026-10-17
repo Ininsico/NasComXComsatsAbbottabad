@@ -250,13 +250,14 @@ so switching models starts a new index instead of corrupting the existing one.
 
 ```bash
 pip install chromadb fastembed flask flask-cors
-npm run chroma          # vector database     -> http://localhost:8000
-npm run embed           # embeddings + service -> http://127.0.0.1:8100
-
-# equivalently:
-chroma run --path ./AI/data/chroma --port 8000
-python AI/main.py
+npm run embed           # starts Chroma (8000) AND the embedding service (8100)
 ```
+
+`python AI/main.py` (what `npm run embed` calls) **owns the Python side**: it locates the `chroma`
+CLI wherever pip installed it, starts it as a child process if nothing is already listening on
+`CHROMA_PORT`, waits for its heartbeat, logs to `AI/data/chroma.log`, and stops it again on Ctrl+C.
+If Chroma is already running elsewhere it just uses it. Set `CHROMA_AUTOSTART=false` to keep the old
+behaviour and run Chroma separately with `npm run chroma`.
 
 Either dependency can be missing: without Chroma the pipeline uses a bundled vector store, and
 without the embedding service it falls back to hashed vectors. Both fallbacks are logged, and the
