@@ -1,4 +1,5 @@
 import {
+  Activity,
   Bell,
   Bitcoin,
   BookOpen,
@@ -8,6 +9,7 @@ import {
   CloudUpload,
   Clock,
   CreditCard,
+  ExternalLink,
   FileText,
   GraduationCap,
   HardDrive,
@@ -448,10 +450,19 @@ export default function Admin() {
             {data?.generatedAt ? ` · snapshot ${formatDateTime(data.generatedAt)}` : ''}
           </p>
         </div>
-        <button type="button" className="btn btn-secondary btn-sm" onClick={reload}>
-          <RefreshCw size={14} aria-hidden="true" />
-          Refresh
-        </button>
+        <div className="btn-row">
+          {/* Grafana is served under /grafana/ by the same origin, so a plain link works
+              and needs no extra hostname or certificate. */}
+          <a className="btn btn-secondary btn-sm" href="/grafana/" target="_blank" rel="noreferrer">
+            <Activity size={14} aria-hidden="true" />
+            Grafana
+            <ExternalLink size={12} aria-hidden="true" />
+          </a>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={reload}>
+            <RefreshCw size={14} aria-hidden="true" />
+            Refresh
+          </button>
+        </div>
       </div>
 
       <AsyncSection

@@ -1,0 +1,38 @@
+# Prometheus scrape configuration for the nascon stack.
+#
+# Everything here is reached over the compose network; no exporter port is published
+# to the host.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    stack: nascon
+
+scrape_configs:
+  # The API's own metrics: request counts per route/status and a latency histogram,
+  # plus process memory and uptime. See backend/src/lib/metrics.js.
+  - job_name: nascon-api
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["backend:4000"]
+
+  # Host CPU, memory, disk and network.
+  - job_name: node
+    static_configs:
+      - targets: ["node-exporter:9100"]
+
+  # Per-container CPU and memory for the compose services.
+  - job_name: cadvisor
+    static_configs:
+      - targets: ["cadvisor:8080"]
+
+  # Redis: throughput, memory, clients, keyspace.
+  - job_name: redis
+    static_configs:
+      - targets: ["redis-exporter:9121"]
+
+  # Prometheus itself, so its own scrape health is visible.
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

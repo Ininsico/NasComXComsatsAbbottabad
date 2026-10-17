@@ -22,6 +22,11 @@ deploy/
 │   ├── ai.Dockerfile               Flask: embeddings, voice, audio queue worker
 │   ├── chroma.Dockerfile           vector database, pinned to the backend client's version
 │   └── frontend-nginx.conf         SPA fallback + reverse proxies
+├── prometheus/
+│   └── prometheus.yml            what gets scraped
+├── grafana/
+│   ├── provisioning/             datasource + dashboard provider, applied on boot
+│   └── dashboards/nascon.json    the "platform overview" dashboard, 12 panels
 ├── nginx/
 │   └── nascon.artdevelopers.site.conf    host vhost: TLS + proxy to 127.0.0.1:8085
 └── scripts/
@@ -250,6 +255,46 @@ Inspect it:
 docker exec -it nascon-redis-1 redis-cli
 docker exec nascon-redis-1 redis-cli info keyspace
 docker compose --env-file .env restart redis
+```
+
+## Observability
+
+Prometheus scrapes; Grafana draws. Both live on the compose network with no published
+ports, and nothing but Grafana's own login page is reachable from outside.
+
+- **Prometheus** scrapes five jobs: the API's `/metrics`, `node-exporter` (host CPU,
+  memory, disk, network), `cAdvisor` (per-container CPU and memory), `redis-exporter`,
+  and itself.
+- **The API's metrics** are produced by `backend/src/lib/metrics.js` with no dependency:
+  request counts per method/route/status, and a latency **histogram** rather than an
+  average, so `histogram_quantile` gives a real p95. Routes are the matched patterns
+  (`/api/documents/:id`), never concrete URLs, so cardinality stays bounded.
+- **Grafana** is at **<https://nascon.artdevelopers.site/grafana/>** — the frontend
+  nginx proxies `/grafana/` to it, so it needs no extra hostname or certificate. Sign in
+  with `GRAFANA_ADMIN_USER` / `GRAFANA_ADMIN_PASSWORD`; anonymous access and sign-ups are
+  off. The admin console has a Grafana button that opens it.
+- **The dashboard** "NASCON — platform overview" is provisioned from
+  `deploy/grafana/dashboards/nascon.json` and set as the home dashboard. It shows request
+  rate and p95 by route, 5xx share, host CPU and memory, container CPU and memory per
+  service, API resident memory, and Redis throughput, memory and clients.
+- Metric data is kept for 15 days in the `prometheus-data` volume.
+
+To chart something new: record it through `increment()` / `observe()` in
+`backend/src/lib/metrics.js`, and the scrape picks it up with no configuration. Then add
+the PromQL to the dashboard JSON.
+
+Inspect the stack directly. Neither Prometheus nor `/metrics` is published to the host,
+so these run inside the containers:
+
+```bash
+# scrape targets and their health
+docker exec nascon-prometheus-1 wget -qO- http://127.0.0.1:9090/api/v1/targets | head -c 600
+
+# what the API exposes
+docker exec nascon-backend-1 node -e "fetch('http://127.0.0.1:4000/metrics').then(r => r.text()).then(t => console.log(t.slice(0, 700)))"
+
+# Grafana is the only public piece, behind its own login
+curl -sI https://nascon.artdevelopers.site/grafana/ | head -3
 ```
 
 ## Environment and secrets

@@ -2,6 +2,7 @@ import cors from 'cors';
 import express from 'express';
 import { config } from './config.js';
 import { countDemoAccounts, DEMO_ACCOUNT_COUNT } from './lib/seed.js';
+import { metricsMiddleware, renderMetrics } from './lib/metrics.js';
 import { redisStatus } from './lib/redis.js';
 import accountRoutes from './routes/account.js';
 import adminRoutes from './routes/admin.js';
@@ -30,6 +31,14 @@ export function createApp() {
     }),
   );
   app.use(express.json({ limit: '100kb' }));
+
+  // Counts and times every request. Prometheus scrapes /metrics below.
+  app.use(metricsMiddleware);
+
+  app.get('/metrics', (req, res) => {
+    res.type('text/plain; version=0.0.4');
+    res.send(renderMetrics());
+  });
 
   app.get('/api/health', async (req, res) => {
     res.json({
