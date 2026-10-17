@@ -185,8 +185,11 @@ services:
     volumes:
       - backend-data:/app/data
     depends_on:
+      # Healthy, not just started: the backend indexes the campus knowledge base as it
+      # boots, and if the AI service is not answering yet that indexing silently falls
+      # back to the non-semantic embedder and stays that way.
       ai:
-        condition: service_started
+        condition: service_healthy
       chroma:
         condition: service_healthy
     networks: [nascon]
@@ -210,7 +213,7 @@ services:
       backend:
         condition: service_started
       ai:
-        condition: service_started
+        condition: service_healthy
     networks: [nascon]
 
 networks:

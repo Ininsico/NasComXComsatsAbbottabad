@@ -104,8 +104,44 @@ function campusDocuments() {
   ];
 }
 
+/**
+ * Wait for the embeddings service to answer before indexing.
+ *
+ * The store decides once whether semantic embeddings are usable, and a failure at that
+ * moment makes it fall back to the hashed embedder for the life of the process. Booting
+ * faster than the Python service therefore quietly costs retrieval quality, which is
+ * exactly what happened on the first container deploys. Waiting here removes the race.
+ */
+async function waitForEmbeddings(attempts = 20, delayMs = 3000) {
+  if (!config.rag.useSemantic) return false;
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      const response = await fetch(`${config.rag.embeddingsUrl}/health`, {
+        signal: AbortSignal.timeout(4000),
+      });
+
+      if (response.ok) return true;
+    } catch {
+      // not up yet
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+  }
+
+  return false;
+}
+
 /** Idempotent: re-ingesting a sourceId replaces that source. */
 export async function seedCampusKnowledge() {
+  const semanticReady = await waitForEmbeddings();
+
+  if (config.rag.useSemantic && !semanticReady) {
+    console.warn(
+      'RAG: the embeddings service never answered — indexing with the hashed fallback, retrieval quality will be lower',
+    );
+  }
+
   const result = await pipeline.ingestMany({
     namespace: SHARED_NAMESPACE,
     documents: campusDocuments(),
