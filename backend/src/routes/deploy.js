@@ -147,14 +147,21 @@ router.post('/status', async (req, res) => {
     return res.status(400).json({ error: `Unknown stage: ${stage}` });
   }
 
+  const incomingSha = req.body?.sha ?? previous.sha ?? null;
+
+  // A new run resets the clock. Carrying startedAt over from the previous deploy made
+  // every later run look older than the staleness window, so the site reported
+  // "Finished" while the build was still running.
+  const isNewRun = previous.inProgress !== true || previous.sha !== incomingSha;
+
   const record = {
     inProgress: true,
     stage,
     percent: STAGE_BY_KEY.get(stage).percent,
-    sha: req.body?.sha ?? previous.sha ?? null,
+    sha: incomingSha,
     actor: req.body?.actor ?? previous.actor ?? null,
     message: req.body?.message ?? null,
-    startedAt: previous.startedAt ?? new Date().toISOString(),
+    startedAt: isNewRun ? new Date().toISOString() : (previous.startedAt ?? new Date().toISOString()),
     finishedAt: null,
     // The pipeline reports what docker says about each service, so the page can show
     // a row per container without this process needing the docker socket.
