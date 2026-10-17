@@ -48,8 +48,23 @@ jobs:
       - name: Confirm the target is up
         run: |
           set -euo pipefail
-          curl -fsS --max-time 15 "${{ inputs.base_url }}/api/health" | tee /tmp/health.json
-          grep -q '"status":"ok"' /tmp/health.json
+          # A deploy may be recreating the containers right now, which briefly closes the
+          # port. Wait for it rather than reporting a fake failure.
+          for attempt in $(seq 1 36); do
+            if curl -fsS --max-time 10 "${{ inputs.base_url }}/api/health" -o /tmp/health.json 2>/dev/null; then
+              if grep -q '"status":"ok"' /tmp/health.json; then
+                echo "target is up (attempt $attempt)"
+                cat /tmp/health.json
+                exit 0
+              fi
+            fi
+
+            echo "  attempt $attempt: ${{ inputs.base_url }} is not answering yet"
+            sleep 5
+          done
+
+          echo "::error::the target never answered: ${{ inputs.base_url }}"
+          exit 1
 
       - name: Run the smoke test (every feature, once)
         if: inputs.profile == 'smoke'
