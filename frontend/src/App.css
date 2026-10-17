@@ -1612,146 +1612,111 @@
   grid-column: 1 / -1;
 }
 
-/* Deployment banner ---------------------------------------------------- */
+/* Deployment ----------------------------------------------------------- */
 
-.deploy-banner {
-  position: relative;
-  display: flex;
-  justify-content: center;
-  overflow: hidden;
-  padding: 0.45rem 1rem;
-  background: var(--blue-600);
-  color: #fff;
-  font-size: 0.75rem;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-}
-
-/* The travelling highlight is what makes it read as live rather than broken. */
-.deploy-banner__sweep {
-  position: absolute;
+/**
+ * While a deployment is replacing the stack this sits above everything, including the
+ * fixed site header (z-index 50) and the toasts (200), so it is impossible to be
+ * looking at a stale page without realising something is happening.
+ */
+.deploy-overlay {
+  position: fixed;
   inset: 0;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.35), transparent);
-  transform: translateX(-100%);
-  animation: deploy-sweep 1.8s ease-in-out infinite;
-}
-
-.deploy-banner__label {
-  position: relative;
-  display: inline-flex;
+  z-index: 400;
+  display: flex;
   align-items: center;
-  gap: 0.5rem;
-  text-align: center;
+  justify-content: center;
+  overflow-y: auto;
+  padding: clamp(1rem, 4vw, 3rem);
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(3px);
 }
 
-.deploy-banner__spin {
-  animation: deploy-spin 1.2s linear infinite;
+.deploy-overlay__card {
+  width: 100%;
+  max-width: 760px;
+  margin: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--r-2xl);
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
 }
-
-a.deploy-banner,
-a.deploy-banner:visited {
-  color: #fff;
-  text-decoration: none;
-}
-
-/* A hairline bar along the bottom of the banner, filled to the real percentage. */
-.deploy-banner__bar {
-  position: absolute;
-  inset: auto 0 0 0;
-  height: 2px;
-  background: rgba(255, 255, 255, 0.25);
-}
-
-.deploy-banner__bar span {
-  display: block;
-  height: 100%;
-  background: #fff;
-  transition: width 400ms ease;
-}
-
-/* Deployment page ------------------------------------------------------ */
 
 .deploy-page {
   display: flex;
   justify-content: center;
-  padding: clamp(1.5rem, 1rem + 4vw, 4rem) 1rem;
-  background: var(--slate-50, #f8fafc);
+  padding: clamp(1.5rem, 4vw, 4rem) 1rem;
+  background: var(--slate-100, #f1f5f9);
   min-height: 100vh;
 }
 
-.deploy-card {
-  width: 100%;
-  max-width: 720px;
+.deploy-panel {
   display: grid;
   gap: 1.5rem;
-  align-self: flex-start;
   padding: clamp(1.25rem, 1rem + 2vw, 2rem);
-  box-shadow: var(--shadow-card);
 }
 
-.deploy-card__head {
+.deploy-panel__head {
   display: flex;
   align-items: flex-start;
   gap: 1rem;
 }
 
-.deploy-card__head h1 {
+.deploy-panel__title {
   margin: 0;
-  font-size: 1.125rem;
+  font-size: 1.25rem;
+  line-height: 1.3;
 }
 
-.deploy-card__head p {
+.deploy-panel__subtitle {
   margin: 0.25rem 0 0;
   color: var(--slate-600);
   font-size: 0.875rem;
 }
 
-.deploy-card__icon {
+.deploy-panel__icon {
   display: grid;
   place-items: center;
-  width: 52px;
-  height: 52px;
+  width: 54px;
+  height: 54px;
   flex: 0 0 auto;
   border-radius: var(--r-2xl);
   background: var(--emerald-500);
   color: #fff;
 }
 
-.deploy-card__icon.is-running {
+.deploy-panel__icon.is-running {
   background: var(--blue-600);
 }
 
-.deploy-card__icon.is-failed {
+.deploy-panel__icon.is-failed {
   background: var(--rose-500);
 }
 
-.deploy-progress__labels {
+.deploy-panel__prolabels {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   margin-bottom: 0.5rem;
 }
 
-.deploy-progress__percent {
-  font-size: 1.5rem;
+.deploy-panel__percent {
+  font-size: 1.75rem;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+  line-height: 1;
   color: var(--slate-900, #0f172a);
 }
 
-.deploy-progress__track {
+.deploy-panel__track {
   position: relative;
-  height: 12px;
+  height: 14px;
   overflow: hidden;
   border-radius: var(--r-full);
   background: var(--slate-200);
 }
 
-.deploy-progress__track.is-failed .deploy-progress__fill {
-  background: var(--rose-500);
-}
-
-.deploy-progress__fill {
+.deploy-panel__fill {
   position: relative;
   display: block;
   height: 100%;
@@ -1761,12 +1726,49 @@ a.deploy-banner:visited {
   transition: width 500ms ease;
 }
 
-.deploy-progress__sweep {
+.deploy-panel__track.is-failed .deploy-panel__fill {
+  background: var(--rose-500);
+}
+
+/* The travelling highlight is what makes the bar read as live rather than stuck. */
+.deploy-panel__sweep {
   position: absolute;
   inset: 0;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.5), transparent);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.55), transparent);
   transform: translateX(-100%);
   animation: deploy-sweep 1.6s ease-in-out infinite;
+}
+
+.deploy-panel__columns {
+  display: grid;
+  gap: 1.5rem;
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 640px) {
+  .deploy-panel__columns {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.deploy-panel__columns h2 {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0 0 0.625rem;
+}
+
+.deploy-panel__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--line);
+}
+
+.deploy-panel__footer {
+  margin: 0;
+  padding: 0 clamp(1.25rem, 1rem + 2vw, 2rem) clamp(1.25rem, 1rem + 2vw, 2rem);
 }
 
 .deploy-stages {
@@ -1799,16 +1801,59 @@ a.deploy-banner:visited {
   font-weight: 600;
 }
 
-.deploy-stage__spin {
-  animation: deploy-spin 1.2s linear infinite;
+/* One row per container, coloured by what docker reports. */
+.deploy-containers {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
-.deploy-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  padding-top: 0.5rem;
-  border-top: 1px solid var(--line);
+.deploy-container {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  font-size: 0.8125rem;
+  background: var(--slate-50, #f8fafc);
+}
+
+.deploy-container__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--slate-400);
+}
+
+.deploy-container.is-done .deploy-container__dot {
+  background: var(--emerald-500);
+}
+
+.deploy-container.is-pending .deploy-container__dot {
+  background: var(--amber-500, #f59e0b);
+  animation: deploy-pulse 1.4s ease-in-out infinite;
+}
+
+.deploy-container.is-problem .deploy-container__dot {
+  background: var(--rose-500);
+}
+
+.deploy-container__name {
+  font-weight: 600;
+  color: var(--slate-900, #0f172a);
+}
+
+.deploy-container__state {
+  color: var(--slate-600);
+  font-size: 0.75rem;
+}
+
+.spin {
+  animation: deploy-spin 1.2s linear infinite;
 }
 
 @keyframes deploy-sweep {
@@ -1826,13 +1871,24 @@ a.deploy-banner:visited {
   }
 }
 
+@keyframes deploy-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .deploy-banner__sweep {
+  .deploy-panel__sweep {
     animation: none;
     opacity: 0.2;
   }
 
-  .deploy-banner__spin {
+  .spin,
+  .deploy-container.is-pending .deploy-container__dot {
     animation: none;
   }
 }

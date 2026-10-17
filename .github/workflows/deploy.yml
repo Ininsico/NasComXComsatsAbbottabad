@@ -72,7 +72,13 @@ jobs:
           set -eo pipefail
           fail() { echo "::error::$1"; exit 1; }
 
-          bash deploy/scripts/announce.sh health
+          # The page shows one row per container, so every round reports what docker
+          # says right now rather than just a count.
+          snapshot() { bash deploy/scripts/snapshot-containers.sh /tmp/nascon-containers.json; }
+
+          snapshot
+          bash deploy/scripts/announce.sh health "starting the stack" /tmp/nascon-containers.json
+
           pending=0
 
           for attempt in $(seq 1 60); do
@@ -84,6 +90,9 @@ jobs:
                 pending=$((pending + 1))
               fi
             done
+
+            snapshot
+            bash deploy/scripts/announce.sh health "$pending service(s) still starting" /tmp/nascon-containers.json
 
             if [ "$pending" = "0" ]; then
               echo "all containers healthy after $((attempt * 5))s"

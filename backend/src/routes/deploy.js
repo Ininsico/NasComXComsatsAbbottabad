@@ -30,6 +30,18 @@ const STAGE_BY_KEY = new Map(STAGES.map((stage) => [stage.key, stage]));
 
 const router = Router();
 
+/** Keep only the fields the page draws, so nothing odd can be stored. */
+function cleanContainers(value) {
+  if (!Array.isArray(value)) return [];
+
+  return value.slice(0, 12).map((entry) => ({
+    name: String(entry?.name ?? '').slice(0, 80),
+    service: String(entry?.service ?? '').slice(0, 40),
+    state: String(entry?.state ?? '').slice(0, 40),
+    health: String(entry?.health ?? '').slice(0, 40),
+  }));
+}
+
 function describe(record) {
   const index = STAGE_KEYS.indexOf(record.stage);
   const stage = STAGE_BY_KEY.get(record.stage);
@@ -45,6 +57,7 @@ function describe(record) {
     message: record.message ?? null,
     startedAt: record.startedAt ?? null,
     finishedAt: record.finishedAt ?? null,
+    containers: Array.isArray(record.containers) ? record.containers : [],
     stages: STAGES.map((entry, position) => ({
       key: entry.key,
       label: entry.label,
@@ -143,6 +156,11 @@ router.post('/status', async (req, res) => {
     message: req.body?.message ?? null,
     startedAt: previous.startedAt ?? new Date().toISOString(),
     finishedAt: null,
+    // The pipeline reports what docker says about each service, so the page can show
+    // a row per container without this process needing the docker socket.
+    containers: cleanContainers(req.body?.containers).length
+      ? cleanContainers(req.body.containers)
+      : (previous.containers ?? []),
   };
 
   await writeRecord(record);

@@ -148,6 +148,10 @@ jobs:
 
   docker:
     name: Docker images build
+    # Only on pull requests. On a push to main the Deploy workflow builds exactly the
+    # same four images on this same machine, and two concurrent builds of the same
+    # images just halve the speed of both. A broken Dockerfile still fails the deploy.
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     runs-on: [self-hosted, nascon]
     strategy:
       matrix:
