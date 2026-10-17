@@ -45,29 +45,15 @@ jobs:
           fi
           echo "using $APP_ENV_FILE"
           grep -cE '^[A-Z]' "$APP_ENV_FILE" | xargs -I{} echo "  {} variables set"
+          bash deploy/scripts/announce.sh preparing
 
       - name: Announce the deployment on the site
-        run: |
-          set -uo pipefail
-          TOKEN=$(grep -E '^DEPLOY_STATUS_TOKEN=' "$APP_ENV_FILE" | cut -d= -f2- || true)
-
-          if [ -z "$TOKEN" ]; then
-            echo "no DEPLOY_STATUS_TOKEN set — skipping the banner"
-            exit 0
-          fi
-
-          if curl -fsS -X POST "https://$DOMAIN/api/deploy/status" \
-            -H "x-deploy-token: $TOKEN" \
-            -H 'Content-Type: application/json' \
-            -d "{\"inProgress\":true,\"sha\":\"${GITHUB_SHA}\",\"actor\":\"${GITHUB_ACTOR}\"}"; then
-            echo "the site is now showing the deployment banner"
-          else
-            echo "could not announce (site unreachable?) — continuing"
-          fi
+        run: bash deploy/scripts/announce.sh announced
 
       - name: Build the images
         run: |
           set -euo pipefail
+          bash deploy/scripts/announce.sh building
           # Tagged with the commit so a rollback is just a different tag.
           export IMAGE_TAG="${GITHUB_SHA::12}"
           echo "IMAGE_TAG=$IMAGE_TAG" >>"$GITHUB_ENV"
@@ -76,6 +62,7 @@ jobs:
       - name: Roll the stack
         run: |
           set -euo pipefail
+          bash deploy/scripts/announce.sh rolling
           docker compose --env-file "$APP_ENV_FILE" up -d --remove-orphans
           docker compose --env-file "$APP_ENV_FILE" ps
           docker image prune -f --filter "until=168h" >/dev/null 2>&1 || true
@@ -85,6 +72,7 @@ jobs:
           set -eo pipefail
           fail() { echo "::error::$1"; exit 1; }
 
+          bash deploy/scripts/announce.sh health
           pending=0
 
           for attempt in $(seq 1 60); do
@@ -113,6 +101,8 @@ jobs:
         run: |
           set -euo pipefail
           fail() { echo "::error::$1"; exit 1; }
+
+          bash deploy/scripts/announce.sh verifying
 
           for attempt in $(seq 1 24); do
             code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "https://$DOMAIN/api/health" || true)
@@ -174,29 +164,27 @@ jobs:
         if: always()
         run: |
           set -uo pipefail
-          TOKEN=$(grep -E '^DEPLOY_STATUS_TOKEN=' "$APP_ENV_FILE" | cut -d= -f2- || true)
 
-          if [ -z "$TOKEN" ]; then
-            exit 0
+          # A failed run must never look finished.
+          if [ "${{ job.status }}" != "success" ]; then
+            bash deploy/scripts/announce.sh failed "the run did not finish cleanly"
           fi
 
           for attempt in 1 2 3 4 5 6; do
-            if curl -fsS -X POST "https://$DOMAIN/api/deploy/status" \
-              -H "x-deploy-token: $TOKEN" \
-              -H 'Content-Type: application/json' \
-              -d '{"inProgress":false}'; then
-              echo "banner cleared"
+            if bash deploy/scripts/announce.sh done && \
+              grep -qE '^DEPLOY_STATUS_TOKEN=' "$APP_ENV_FILE"; then
               exit 0
             fi
-            echo "  attempt $attempt: could not clear yet"
+            echo "  attempt $attempt: could not report yet"
             sleep 5
           done
 
-          echo "::warning::could not clear the banner; it expires on its own after 30 minutes"
+          echo "::warning::could not clear the notice; it expires on its own after 30 minutes"
 
       - name: What to do when it fails
         if: failure()
         run: |
+          bash deploy/scripts/announce.sh failed "the pipeline failed" || true
           echo "::warning::Investigate on the host:"
           echo "  cd /opt/nascon && docker compose --env-file .env ps"
           echo "  cd /opt/nascon && docker compose --env-file .env logs --tail=60"

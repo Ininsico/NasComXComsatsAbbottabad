@@ -19,6 +19,13 @@ ENV NODE_ENV=production \
 
 WORKDIR /app
 
+# Chromium is what the WhatsApp bridge drives. Installing it from the distribution
+# rather than letting puppeteer download a build keeps the image reproducible and
+# means WHATSAPP_CHROME_PATH can simply point at /usr/bin/chromium.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends chromium ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY --from=deps /app/node_modules ./node_modules
 COPY backend/ ./
 

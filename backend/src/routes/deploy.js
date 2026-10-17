@@ -8,51 +8,95 @@ const here = dirname(fileURLToPath(import.meta.url));
 const dataDir = join(here, '..', '..', 'data');
 const statusFile = join(dataDir, 'deploy-status.json');
 
-// A deploy that dies before clearing its flag must not pin the banner on forever.
+// A deploy that dies before clearing its notice must not pin the page on forever.
 const STALE_AFTER_MS = 30 * 60 * 1000;
+
+/**
+ * The stages the pipeline reports, in order, each with the point on the bar it
+ * represents. The weights are honest: building the images is most of the wall time.
+ */
+const STAGES = [
+  { key: 'preparing', label: 'Preparing', percent: 5 },
+  { key: 'announced', label: 'Notifying the site', percent: 10 },
+  { key: 'building', label: 'Building images', percent: 15 },
+  { key: 'rolling', label: 'Restarting the stack', percent: 70 },
+  { key: 'health', label: 'Waiting for services to be healthy', percent: 82 },
+  { key: 'verifying', label: 'Verifying the site', percent: 92 },
+  { key: 'done', label: 'Finished', percent: 100 },
+];
+
+const STAGE_KEYS = STAGES.map((stage) => stage.key);
+const STAGE_BY_KEY = new Map(STAGES.map((stage) => [stage.key, stage]));
 
 const router = Router();
 
-async function readStatus() {
-  try {
-    const parsed = JSON.parse(await readFile(statusFile, 'utf8'));
-    const startedAt = Date.parse(parsed.startedAt ?? '');
+function describe(record) {
+  const index = STAGE_KEYS.indexOf(record.stage);
+  const stage = STAGE_BY_KEY.get(record.stage);
+  const failed = record.stage === 'failed';
 
-    if (!Number.isFinite(startedAt) || Date.now() - startedAt > STALE_AFTER_MS) {
-      return { inProgress: false };
+  return {
+    inProgress: record.inProgress === true,
+    stage: record.stage ?? null,
+    stageLabel: failed ? 'Failed' : (stage?.label ?? 'Unknown'),
+    percent: failed ? (record.percent ?? 0) : (stage?.percent ?? 0),
+    sha: record.sha ?? null,
+    actor: record.actor ?? null,
+    message: record.message ?? null,
+    startedAt: record.startedAt ?? null,
+    finishedAt: record.finishedAt ?? null,
+    stages: STAGES.map((entry, position) => ({
+      key: entry.key,
+      label: entry.label,
+      state: failed
+        ? position === 0
+          ? 'failed'
+          : 'skipped'
+        : position < index
+          ? 'done'
+          : position === index
+            ? record.inProgress
+              ? 'current'
+              : 'done'
+            : 'pending',
+    })),
+  };
+}
+
+async function readRecord() {
+  try {
+    const stored = JSON.parse(await readFile(statusFile, 'utf8'));
+    const startedAt = Date.parse(stored.startedAt ?? '');
+
+    // An in-progress notice that nobody cleared is treated as finished, so a deploy
+    // that was killed mid-flight cannot leave the site permanently "deploying".
+    if (stored.inProgress && (!Number.isFinite(startedAt) || Date.now() - startedAt > STALE_AFTER_MS)) {
+      return { ...stored, inProgress: false, stage: 'done', finishedAt: stored.finishedAt ?? null };
     }
 
-    return {
-      inProgress: true,
-      sha: parsed.sha ?? null,
-      actor: parsed.actor ?? null,
-      startedAt: parsed.startedAt,
-    };
+    return stored;
   } catch {
-    return { inProgress: false };
+    return null;
   }
 }
 
-async function writeStatus(payload) {
+async function writeRecord(record) {
   await mkdir(dataDir, { recursive: true });
 
   const temporary = join(dataDir, `.deploy-status.${randomUUID()}.tmp`);
-  await writeFile(temporary, JSON.stringify(payload));
+  await writeFile(temporary, JSON.stringify(record));
   await rename(temporary, statusFile);
 }
 
-/**
- * Public: the site polls this while a deployment is running so it can show a banner.
- * There is nothing sensitive in it — no token, no logs, just "something is being
- * replaced right now".
- */
+/** Public. The site polls this to draw the progress bar. Nothing sensitive. */
 router.get('/status', async (req, res) => {
-  res.json(await readStatus());
+  const record = await readRecord();
+  res.json(record ? describe(record) : { inProgress: false, stages: [] });
 });
 
 /**
- * Called by the deploy pipeline. The route only exists when DEPLOY_STATUS_TOKEN is
- * set, so a normal local checkout does not expose a writable endpoint.
+ * Called by the deploy pipeline at each stage. The route only exists when
+ * DEPLOY_STATUS_TOKEN is set, so a local checkout has no writable endpoint.
  */
 router.post('/status', async (req, res) => {
   const expected = process.env.DEPLOY_STATUS_TOKEN ?? '';
@@ -65,15 +109,58 @@ router.post('/status', async (req, res) => {
     return res.status(401).json({ error: 'Invalid deploy token' });
   }
 
-  if (req.body?.inProgress === false) {
-    await rm(statusFile, { force: true });
-    return res.json({ inProgress: false });
+  const stage = String(req.body?.stage ?? '').trim() || 'preparing';
+  const previous = (await readRecord()) ?? {};
+
+  if (stage === 'done' || stage === 'failed') {
+    const record = {
+      ...previous,
+      inProgress: false,
+      stage,
+      percent: stage === 'done' ? 100 : (previous.percent ?? STAGE_BY_KEY.get(previous.stage)?.percent ?? 0),
+      sha: req.body?.sha ?? previous.sha ?? null,
+      actor: req.body?.actor ?? previous.actor ?? null,
+      message: req.body?.message ?? previous.message ?? null,
+      startedAt: previous.startedAt ?? new Date().toISOString(),
+      finishedAt: new Date().toISOString(),
+    };
+
+    await writeRecord(record);
+
+    return res.json(describe(record));
   }
 
-  const startedAt = new Date().toISOString();
-  await writeStatus({ startedAt, sha: req.body?.sha ?? null, actor: req.body?.actor ?? null });
+  if (!STAGE_BY_KEY.has(stage)) {
+    return res.status(400).json({ error: `Unknown stage: ${stage}` });
+  }
 
-  return res.json({ inProgress: true, startedAt });
+  const record = {
+    inProgress: true,
+    stage,
+    percent: STAGE_BY_KEY.get(stage).percent,
+    sha: req.body?.sha ?? previous.sha ?? null,
+    actor: req.body?.actor ?? previous.actor ?? null,
+    message: req.body?.message ?? null,
+    startedAt: previous.startedAt ?? new Date().toISOString(),
+    finishedAt: null,
+  };
+
+  await writeRecord(record);
+
+  return res.json(describe(record));
+});
+
+/** Lets an operator clear a stuck notice by hand. */
+router.delete('/status', async (req, res) => {
+  const expected = process.env.DEPLOY_STATUS_TOKEN ?? '';
+
+  if (!expected || req.get('x-deploy-token') !== expected) {
+    return res.status(401).json({ error: 'Invalid deploy token' });
+  }
+
+  await rm(statusFile, { force: true });
+
+  return res.json({ inProgress: false, stages: [] });
 });
 
 export default router;

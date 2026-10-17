@@ -1,5 +1,6 @@
 import { CloudUpload, LoaderCircle } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { deployStatus } from '../lib/api.js';
 
 const POLL_MS = 8000;
@@ -34,19 +35,21 @@ export default function DeployBanner() {
 
   if (!status.inProgress) return null;
 
+  const percent = Math.max(0, Math.min(100, status.percent ?? 0));
+
   return (
-    <div className="deploy-banner" role="status" aria-live="polite">
+    <Link className="deploy-banner" to="/deploy" role="status" aria-live="polite">
       <span className="deploy-banner__sweep" aria-hidden="true" />
       <span className="deploy-banner__label">
         <LoaderCircle size={14} className="deploy-banner__spin" aria-hidden="true" />
         <CloudUpload size={14} aria-hidden="true" />
         <span>
-          Deploying an update — the site may blink for a moment
-          {status.sha ? (
-            <code className="deploy-banner__sha">{status.sha.slice(0, 7)}</code>
-          ) : null}
+          {status.stageLabel ?? 'Deploying'} — {percent}% · the site may blink for a moment
         </span>
       </span>
-    </div>
+      <span className="deploy-banner__bar" aria-hidden="true">
+        <span style={{ width: `${percent}%` }} />
+      </span>
+    </Link>
   );
 }

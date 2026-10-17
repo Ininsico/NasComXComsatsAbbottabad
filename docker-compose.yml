@@ -163,9 +163,13 @@ services:
       RAG_USE_SEMANTIC: "true"
       EMBEDDINGS_URL: http://ai:8100
 
-      # WhatsApp needs a Chromium and an interactive QR scan per environment, so it
-      # stays off in containers. See deploy/README.md to enable it.
+      # WhatsApp: chromium comes from the image, and the linked session lives in the
+      # backend-data volume, so a deploy never asks for a QR scan again. The client
+      # auto-connects whenever that session is present, regardless of the flag below.
+      # See deploy/README.md.
       WHATSAPP_ENABLED: "false"
+      WHATSAPP_CHROME_PATH: ${WHATSAPP_CHROME_PATH:-/usr/bin/chromium}
+      WHATSAPP_ALLOW_UNKNOWN: ${WHATSAPP_ALLOW_UNKNOWN:-true}
 
       # Lets the deploy pipeline announce that it is replacing the stack, so the site
       # can show a banner. Unset means the write endpoint does not exist.

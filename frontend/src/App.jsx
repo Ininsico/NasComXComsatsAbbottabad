@@ -11,6 +11,7 @@ import Admin from './pages/Admin.jsx';
 import Admissions from './pages/Admissions.jsx';
 import Contact from './pages/Contact.jsx';
 import Dashboard from './pages/Dashboard.jsx';
+import Deploy from './pages/Deploy.jsx';
 import Documents from './pages/Documents.jsx';
 import Faculty from './pages/Faculty.jsx';
 import Home from './pages/Home.jsx';
@@ -47,6 +48,9 @@ export default function App() {
 
         <Route path="login" element={<Login />} />
         <Route path="signup" element={<Signup />} />
+
+        {/* Always reachable, signed in or not: the deploy pipeline points here. */}
+        <Route path="deploy" element={<Deploy />} />
 
         <Route
           element={
