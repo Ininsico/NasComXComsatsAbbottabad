@@ -1,0 +1,16 @@
+name: Self check
+
+# Deliberately trivial: does any job get a runner at all on this account?
+on:
+  workflow_dispatch:
+
+jobs:
+  echo:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Identity of the runner
+        run: |
+          echo "runner is up"
+          uname -a
+          echo "runner name: ${RUNNER_NAME:-unknown}"
+          echo "os: ${RUNNER_OS:-unknown}"
