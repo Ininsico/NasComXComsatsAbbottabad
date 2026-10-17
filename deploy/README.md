@@ -23,10 +23,12 @@ deploy/
 │   ├── chroma.Dockerfile           vector database, pinned to the backend client's version
 │   └── frontend-nginx.conf         SPA fallback + reverse proxies
 ├── prometheus/
-│   └── prometheus.yml            what gets scraped
+│   ├── prometheus.yml            what gets scraped
+│   └── alerts.yml                eight alerting rules (API, Redis, errors, host, deploys)
 ├── grafana/
+│   ├── build-dashboards.py       generates the dashboards from a compact spec
 │   ├── provisioning/             datasource + dashboard provider, applied on boot
-│   └── dashboards/nascon.json    the "platform overview" dashboard, 12 panels
+│   └── dashboards/*.json         four generated dashboards (34 panels)
 ├── nginx/
 │   └── nascon.artdevelopers.site.conf    host vhost: TLS + proxy to 127.0.0.1:8085
 └── scripts/
@@ -273,10 +275,27 @@ ports, and nothing but Grafana's own login page is reachable from outside.
   nginx proxies `/grafana/` to it, so it needs no extra hostname or certificate. Sign in
   with `GRAFANA_ADMIN_USER` / `GRAFANA_ADMIN_PASSWORD`; anonymous access and sign-ups are
   off. The admin console has a Grafana button that opens it.
-- **The dashboard** "NASCON — platform overview" is provisioned from
-  `deploy/grafana/dashboards/nascon.json` and set as the home dashboard. It shows request
-  rate and p95 by route, 5xx share, host CPU and memory, container CPU and memory per
-  service, API resident memory, and Redis throughput, memory and clients.
+- **The dashboards** are provisioned from `deploy/grafana/dashboards/` into the **NASCON**
+  folder, with the first set as the home dashboard:
+
+  | Dashboard | What it answers |
+  | --- | --- |
+  | Platform overview | Is it healthy right now? Requests, p95, errors, host, deploys, firing alerts. |
+  | API detail | Which route is slow or failing? Rate by route/status/method, p50/p95/p99, slowest routes. |
+  | Infrastructure | Host CPU, load, memory, disk, network, uptime, and per-container CPU/memory. |
+  | Data and releases | Redis throughput, memory, clients, hit/miss ratio, evictions, plus deploy progress. |
+
+  They are generated, not hand-edited: `deploy/grafana/build-dashboards.py` holds a
+  compact spec and writes the JSON. Adding a panel is one line there, then run
+  `python deploy/grafana/build-dashboards.py`. Grafana reloads the files every 30s.
+- **Alerts** are Prometheus rules in `deploy/prometheus/alerts.yml`: API down, Redis down,
+  an exporter down, error rate above 5%, p95 above 2s, host memory above 90%, disk above
+  85%, and a deploy stuck for 30 minutes. They evaluate in Prometheus (visible at
+  `/alerts` and in the overview dashboard's "Firing alerts" tile). Grafana has no
+  delivery channel configured — add a contact point under Alerting once you have an
+  email or webhook to send to.
+- **Deploy state is a metric**: `nascon_deploy_in_progress` and `nascon_deploy_percent`
+  are exported by the API, so releases show up on the same charts as traffic.
 - Metric data is kept for 15 days in the `prometheus-data` volume.
 
 To chart something new: record it through `increment()` / `observe()` in

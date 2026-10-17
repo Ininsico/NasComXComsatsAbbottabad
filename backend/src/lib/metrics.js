@@ -9,10 +9,37 @@
  * rather than the concrete URL.
  */
 
+import { readFileSync } from 'node:fs';
+
 const BUCKETS_MS = [5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000];
 
 const counters = new Map();
 const histograms = new Map();
+
+/**
+ * The deploy route tells us where it keeps its status file, so scrapes can report the
+ * deploy as gauges and Grafana can chart releases alongside traffic.
+ */
+let deployStatusFile = null;
+
+export function trackDeployStatus(path) {
+  deployStatusFile = path;
+}
+
+function deployGauges() {
+  if (!deployStatusFile) return null;
+
+  try {
+    const record = JSON.parse(readFileSync(deployStatusFile, 'utf8'));
+
+    return {
+      inProgress: record.inProgress ? 1 : 0,
+      percent: Number(record.percent ?? 0),
+    };
+  } catch {
+    return { inProgress: 0, percent: 0 };
+  }
+}
 
 function escapeLabel(value) {
   return String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n');
@@ -132,6 +159,18 @@ export function renderMetrics() {
   lines.push('# HELP nodejs_version_info Node.js version.');
   lines.push('# TYPE nodejs_version_info gauge');
   lines.push(`nodejs_version_info{version="${process.version}"} 1`);
+
+  const deploy = deployGauges();
+
+  if (deploy) {
+    lines.push('# HELP nascon_deploy_in_progress 1 while a deployment is replacing the stack.');
+    lines.push('# TYPE nascon_deploy_in_progress gauge');
+    lines.push(`nascon_deploy_in_progress ${deploy.inProgress}`);
+
+    lines.push('# HELP nascon_deploy_percent How far the current or last deployment got.');
+    lines.push('# TYPE nascon_deploy_percent gauge');
+    lines.push(`nascon_deploy_percent ${deploy.percent}`);
+  }
 
   return `${lines.join('\n')}\n`;
 }

@@ -9,6 +9,11 @@ global:
   external_labels:
     stack: nascon
 
+# Alerting rules live in their own file. They evaluate here and Grafana picks the state
+# up from the ALERTS series.
+rule_files:
+  - /etc/prometheus/alerts.yml
+
 scrape_configs:
   # The API's own metrics: request counts per route/status and a latency histogram,
   # plus process memory and uptime. See backend/src/lib/metrics.js.

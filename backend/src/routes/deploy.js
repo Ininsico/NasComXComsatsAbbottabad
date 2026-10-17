@@ -3,10 +3,15 @@ import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Router } from 'express';
+import { trackDeployStatus } from '../lib/metrics.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const dataDir = join(here, '..', '..', 'data');
 const statusFile = join(dataDir, 'deploy-status.json');
+
+// Expose deploy state as Prometheus gauges, so Grafana can chart releases next to
+// traffic and alerting can see them.
+trackDeployStatus(statusFile);
 
 // A deploy that dies before clearing its notice must not pin the page on forever.
 const STALE_AFTER_MS = 30 * 60 * 1000;
