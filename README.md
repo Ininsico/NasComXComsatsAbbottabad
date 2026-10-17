@@ -356,7 +356,7 @@ Everything ships as containers and deploys through GitHub Actions — see
 
 | File | What it does |
 | --- | --- |
-| `docker-compose.yml` | frontend, backend, ai, chroma and the official RabbitMQ image |
+| `docker-compose.yml` | frontend, backend, ai, chroma, redis, and the official RabbitMQ image |
 | `deploy/docker/*.Dockerfile` | one image per service |
 | `deploy/scripts/bootstrap-vm.sh` | prepares a host: Docker, vhost, certificate |
 | `deploy/scripts/install-runner.sh` | adds self-hosted Actions runners |

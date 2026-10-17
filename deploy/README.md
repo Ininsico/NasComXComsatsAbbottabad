@@ -48,7 +48,8 @@ browser ──TLS──▶    │  nascon.artdevelopers.site → 127.0.0.1:8085 
                     ▼                                                    ▼
               backend (Express)                                      ai (Flask)
               ├── chroma:8000                                        ├── chroma:8000
-              ├── ai:8100 (embeddings, voice)                        └── rabbitmq:5672
+              ├── ai:8100 (embeddings, voice)                        ├── rabbitmq:5672
+              ├── redis:6379                                         └── redis:6379
               └── Cloudinary, Groq, Binance
 ```
 
@@ -162,6 +163,7 @@ Every deploy recreates containers but keeps these named volumes:
 | `nascon_backend-data` | `/app/data` (backend) | `users.json`, `documents.json`, `profiles.json`, `deploy-status.json`, **`whatsapp-session/`** |
 | `nascon_ai-data` | `/app/data` (ai) | embedding model cache, audio spool, local vector fallback |
 | `nascon_rabbitmq-data` | `/var/lib/rabbitmq` | queue state |
+| `nascon_redis-data` | `/data` (redis) | the append-only file, so keys survive a restart |
 
 `docker compose down` keeps them; `down -v` destroys them (and you would lose the
 WhatsApp link and every stored document — don't).
@@ -211,6 +213,43 @@ included in `/voice/health`. The management UI is not published — tunnel it:
 
 ```bash
 ssh -L 15672:127.0.0.1:15672 root@169.58.119.44    # then http://localhost:15672
+```
+
+## Redis
+
+`redis:7-alpine`, on the compose network as **`redis:6379`** and not published to the
+host. Append-only persistence (`--appendfsync everysec`) and `maxmemory-policy
+noeviction`, so keys survive a restart and Redis refuses a write rather than silently
+dropping one. If it only ever holds disposable cache data, `allkeys-lru` is the better
+policy — that is the one setting worth revisiting.
+
+It is wired but deliberately unused: `REDIS_URL` reaches both the API and the AI
+service, and nothing reads it until you ask for it. Leaving `REDIS_URL` unset disables
+Redis completely.
+
+Using it from an API route — this is what a page will need:
+
+```js
+import { withCache, cacheGet, cacheSet, cacheDel } from '../lib/redis.js';
+
+// 30-second cache around something expensive
+const { value, cached } = await withCache('dashboard:stats', 30, loadStats);
+
+await cacheSet('session:abc', { userId: '…' }, 3600);
+const session = await cacheGet('session:abc');
+await cacheDel('session:abc');
+```
+
+Every helper degrades: no URL, a dead Redis or a blip returns null/false and calls the
+loader rather than failing the request. `GET /api/health` reports
+`redis: { configured, reachable }`, so its state is checkable from outside the host.
+
+Inspect it:
+
+```bash
+docker exec -it nascon-redis-1 redis-cli
+docker exec nascon-redis-1 redis-cli info keyspace
+docker compose --env-file .env restart redis
 ```
 
 ## Environment and secrets

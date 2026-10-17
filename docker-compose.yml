@@ -52,6 +52,37 @@ services:
     #   ssh -L 15672:127.0.0.1:15672 root@<vm>   then open http://localhost:15672
 
   # ------------------------------------------------------------------ #
+  # Redis — cache, rate limiting, sessions, anything keyed and short-lived
+  # ------------------------------------------------------------------ #
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    <<: *default-logging
+    # appendonly gives durability across restarts; noeviction means Redis refuses to
+    # silently drop keys when full rather than quietly losing data. Change the policy
+    # to allkeys-lru if it is used purely as a cache.
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --appendfsync
+      - everysec
+      - --maxmemory-policy
+      - noeviction
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks: [nascon]
+    # Not published. Reachable as redis:6379 inside the compose network, which is all
+    # the app needs; to poke at it use:
+    #   docker exec -it nascon-redis-1 redis-cli
+
+  # ------------------------------------------------------------------ #
   # Vector database
   # ------------------------------------------------------------------ #
   chroma:
@@ -110,6 +141,9 @@ services:
       RABBITMQ_AUDIO_QUEUE: ${RABBITMQ_AUDIO_QUEUE:-voice.audio}
       RABBITMQ_JOB_TIMEOUT: ${RABBITMQ_JOB_TIMEOUT:-180}
 
+      # Available for the Python side to use; nothing consumes it yet.
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+
       # Voice: Groq Whisper in, edge-tts out.
       VOICE_STT_MODEL: ${VOICE_STT_MODEL:-whisper-large-v3-turbo}
       VOICE_STT_LANGUAGE: ${VOICE_STT_LANGUAGE:-en}
@@ -124,6 +158,8 @@ services:
       rabbitmq:
         condition: service_healthy
       chroma:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     networks: [nascon]
 
@@ -175,6 +211,9 @@ services:
       # can show a banner. Unset means the write endpoint does not exist.
       DEPLOY_STATUS_TOKEN: ${DEPLOY_STATUS_TOKEN:-}
 
+      # Redis. Optional: with no URL the helpers in lib/redis.js all no-op.
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+
       BINANCE_BASE_URL: ${BINANCE_BASE_URL:-https://api.binance.com}
       BINANCE_API_KEY: ${BINANCE_API_KEY}
       BINANCE_API_SECRET: ${BINANCE_API_SECRET}
@@ -191,6 +230,8 @@ services:
       ai:
         condition: service_healthy
       chroma:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     networks: [nascon]
 
@@ -225,3 +266,4 @@ volumes:
   chroma-data:
   ai-data:
   backend-data:
+  redis-data:

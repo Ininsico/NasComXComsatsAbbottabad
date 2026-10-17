@@ -2,6 +2,7 @@ import cors from 'cors';
 import express from 'express';
 import { config } from './config.js';
 import { countDemoAccounts, DEMO_ACCOUNT_COUNT } from './lib/seed.js';
+import { redisStatus } from './lib/redis.js';
 import accountRoutes from './routes/account.js';
 import adminRoutes from './routes/admin.js';
 import aiRoutes from './routes/ai.js';
@@ -36,6 +37,7 @@ export function createApp() {
       env: config.env,
       demoAccounts: await countDemoAccounts(),
       demoAccountsExpected: DEMO_ACCOUNT_COUNT,
+      redis: await redisStatus(),
     });
   });
 
