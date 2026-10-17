@@ -13,7 +13,7 @@ concurrency:
 jobs:
   frontend:
     name: Frontend (lint + build)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, nascon]
     defaults:
       run:
         working-directory: frontend
@@ -32,7 +32,7 @@ jobs:
 
   backend:
     name: Backend (syntax + boot)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, nascon]
     steps:
       - uses: actions/checkout@v4
 
@@ -59,7 +59,9 @@ jobs:
         working-directory: backend
         env:
           NODE_ENV: production
-          PORT: '4000'
+          # A port nothing else on this host uses, so the test never collides with
+          # the running stack.
+          PORT: '4400'
           JWT_SECRET: ci-only-secret-that-is-long-enough-to-satisfy-the-guard
           WHATSAPP_ENABLED: 'false'
           RAG_USE_CHROMA: 'false'
@@ -71,7 +73,7 @@ jobs:
           SERVER_PID=$!
 
           for _ in $(seq 1 40); do
-            if curl -fsS http://127.0.0.1:4000/api/health >health.json 2>/dev/null; then
+            if curl -fsS http://127.0.0.1:4400/api/health >health.json 2>/dev/null; then
               break
             fi
             sleep 1
@@ -90,7 +92,7 @@ jobs:
 
   ai:
     name: AI service (compile + import)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, nascon]
     steps:
       - uses: actions/checkout@v4
 
@@ -146,7 +148,7 @@ jobs:
 
   docker:
     name: Docker images build
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, nascon]
     strategy:
       matrix:
         include:

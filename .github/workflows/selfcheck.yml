@@ -1,17 +1,23 @@
 name: Self check
 
-# Deliberately trivial: does any job get a runner at all on this account?
+# Deliberately trivial. Runs on the self-hosted runner so a broken runner is obvious
+# from one glance at the Actions tab without waiting for a full image build.
 on:
   push:
   workflow_dispatch:
 
 jobs:
   echo:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, nascon]
     steps:
       - name: Identity of the runner
         run: |
           echo "runner is up"
           uname -a
-          echo "runner name: ${RUNNER_NAME:-unknown}"
-          echo "os: ${RUNNER_OS:-unknown}"
+          echo "runner name : ${RUNNER_NAME:-unknown}"
+          echo "os          : ${RUNNER_OS:-unknown}"
+          echo "docker      : $(docker --version)"
+          echo "compose     : $(docker compose version)"
+          echo "node        : $(node --version)"
+          echo "python      : $(python3 --version)"
+          echo "site        : $(curl -s -o /dev/null -w '%{http_code}' https://nascon.artdevelopers.site/api/health)"
