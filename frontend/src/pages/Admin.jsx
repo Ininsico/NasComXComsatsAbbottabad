@@ -24,6 +24,7 @@ import {
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import AsyncSection from '../components/AsyncSection.jsx';
+import PlatformHealth from '../components/PlatformHealth.jsx';
 import { useAuth } from '../context/authContext.js';
 import { useToast } from '../context/toastContext.js';
 import { ROLE_LABELS } from '../data/site.js';
@@ -464,6 +465,8 @@ export default function Admin() {
           </button>
         </div>
       </div>
+
+      <PlatformHealth />
 
       <AsyncSection
         loading={loading}

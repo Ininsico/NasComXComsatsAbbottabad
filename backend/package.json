@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
+    "test": "node --test test/*.test.js",
     "seed": "node src/seed.js",
     "whatsapp:pair": "node src/scripts/whatsapp.js pair",
     "whatsapp:status": "node src/scripts/whatsapp.js status",

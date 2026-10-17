@@ -82,12 +82,20 @@ REQUEST_HEADERS = {"User-Agent": "comsats-voice/1.0 (+local)"}
 
 
 def read_wav(data: bytes) -> tuple[array, int, int]:
-    """16-bit PCM WAV -> (samples, sample_rate, channels). Raises ValueError."""
-    with wave.open(io.BytesIO(data), "rb") as handle:
-        channels = handle.getnchannels()
-        width = handle.getsampwidth()
-        rate = handle.getframerate()
-        frames = handle.readframes(handle.getnframes())
+    """16-bit PCM WAV -> (samples, sample_rate, channels).
+
+    Raises ValueError for anything it cannot read, including a container that is not
+    WAV at all. wave.Error is not a ValueError, so it is normalised here: the callers
+    rely on this to fall back gracefully for webm/ogg uploads instead of returning 500.
+    """
+    try:
+        with wave.open(io.BytesIO(data), "rb") as handle:
+            channels = handle.getnchannels()
+            width = handle.getsampwidth()
+            rate = handle.getframerate()
+            frames = handle.readframes(handle.getnframes())
+    except (wave.Error, EOFError, OSError) as exc:
+        raise ValueError(f"not a readable WAV file: {exc}") from exc
 
     if width != 2:
         raise ValueError(f"need 16-bit PCM audio, got {width * 8}-bit")

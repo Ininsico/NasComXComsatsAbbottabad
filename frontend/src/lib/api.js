@@ -79,6 +79,7 @@ export const api = {
   announcements: () => request('/api/campus/announcements'),
   overview: (token) => request('/api/account/overview', { token }),
   adminOverview: (token) => request('/api/admin/overview', { token }),
+  adminMetrics: (token) => request('/api/admin/metrics', { token }),
   ask: (token, question) =>
     request('/api/assistant/ask', { method: 'POST', body: { question }, token }),
 

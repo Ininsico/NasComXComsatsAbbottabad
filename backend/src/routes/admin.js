@@ -5,6 +5,7 @@ import { requireAuth, requireRole } from '../lib/auth.js';
 import { listDocuments } from '../lib/documents.js';
 import { listStudentSummaries } from '../lib/overview.js';
 import { loadPortfolio } from '../lib/portfolio.js';
+import { monitoringSnapshot } from '../lib/prometheus.js';
 import { listUsers } from '../lib/store.js';
 
 const router = Router();
@@ -18,6 +19,20 @@ const round = (value, digits = 2) => {
 
 const average = (values) =>
   values.length ? values.reduce((total, value) => total + value, 0) / values.length : 0;
+
+/**
+ * Live platform health for the admin dashboard, read from Prometheus.
+ *
+ * Deliberately a fixed set of queries (see lib/prometheus.js) rather than a passthrough,
+ * so this endpoint cannot be used to run arbitrary PromQL.
+ */
+router.get('/metrics', async (req, res) => {
+  try {
+    return res.json(await monitoringSnapshot());
+  } catch (error) {
+    return res.status(503).json({ available: false, reason: error.message, series: {}, instant: {} });
+  }
+});
 
 router.get('/overview', async (req, res) => {
   const users = await listUsers();

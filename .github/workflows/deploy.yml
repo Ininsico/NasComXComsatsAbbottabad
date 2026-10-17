@@ -59,6 +59,32 @@ jobs:
           echo "IMAGE_TAG=$IMAGE_TAG" >>"$GITHUB_ENV"
           docker compose --env-file "$APP_ENV_FILE" build
 
+      - name: Unit tests (against the built images)
+        run: |
+          set -euo pipefail
+
+          IMAGES=$(docker compose --env-file "$APP_ENV_FILE" config --images)
+          BACKEND_IMAGE=$(printf '%s\n' "$IMAGES" | grep -E 'nascon-backend:' | head -1)
+          AI_IMAGE=$(printf '%s\n' "$IMAGES" | grep -E 'nascon-ai:' | head -1)
+
+          if [ -z "$BACKEND_IMAGE" ] || [ -z "$AI_IMAGE" ]; then
+            echo "::error::could not resolve the image names from compose"
+            exit 1
+          fi
+
+          echo "== backend =="
+          docker run --rm \
+            -e NODE_ENV=test \
+            -e JWT_SECRET=unit-tests-only-secret \
+            --entrypoint node "$BACKEND_IMAGE" --test test/payments.test.js test/auth.test.js
+
+          echo
+          echo "== ai =="
+          docker run --rm --entrypoint python "$AI_IMAGE" -m unittest discover -s tests -v
+
+          echo
+          echo "unit tests passed — rolling out"
+
       - name: Roll the stack
         run: |
           set -euo pipefail

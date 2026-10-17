@@ -46,6 +46,13 @@ jobs:
         working-directory: backend
         run: npm ci
 
+      - name: Unit tests (payments matching, auth)
+        working-directory: backend
+        env:
+          NODE_ENV: test
+          JWT_SECRET: unit-tests-only-secret
+        run: npm test
+
       - name: Syntax check every module
         working-directory: backend
         run: |
@@ -107,6 +114,10 @@ jobs:
 
       - name: Byte-compile
         run: python -m compileall -q AI
+
+      - name: Unit tests (VAD, WAV handling, queue spool)
+        working-directory: AI
+        run: python -m unittest discover -s tests -v
 
       - name: Import smoke test
         working-directory: AI
