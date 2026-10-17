@@ -1,16 +1,18 @@
 name: Deploy
 
-# GitHub Actions orchestrates; the work runs on the self-hosted runner installed on
-# the deployment host itself (label: nascon). That runner is the production machine,
-# so the pipeline builds the images locally and restarts the stack in place — no
-# registry round trip, no SSH, and docker layer caching between deploys.
+# GitHub Actions orchestrates; the work runs on the self-hosted runners installed on
+# the deployment host (label: nascon). That runner is the production machine, so the
+# pipeline builds the images locally and restarts the stack in place — no registry
+# round trip, no SSH, and docker layer caching between deploys.
 #
-# Why self-hosted: this account is refused GitHub-hosted runners. Every job — even a
-# single `uname -a` — is aborted with runner_id 0 and no steps, on every workflow.
-# Self-hosted runners are unaffected.
+# Why self-hosted: this account is refused GitHub-hosted runners. Every job — even one
+# whose only step is `uname -a` — is aborted with runner_id 0 and no steps. Self-hosted
+# runners are unaffected.
 #
-# The application's secrets live only in /opt/nascon/.env on the host. They never
-# travel through CI. See deploy/README.md.
+# The concurrency group keeps deploys strictly one at a time even with several
+# runners, because two `docker compose up -d` runs would fight each other.
+#
+# Application secrets live only in /opt/nascon/.env on the host.
 
 on:
   push:
@@ -44,6 +46,25 @@ jobs:
           echo "using $APP_ENV_FILE"
           grep -cE '^[A-Z]' "$APP_ENV_FILE" | xargs -I{} echo "  {} variables set"
 
+      - name: Announce the deployment on the site
+        run: |
+          set -uo pipefail
+          TOKEN=$(grep -E '^DEPLOY_STATUS_TOKEN=' "$APP_ENV_FILE" | cut -d= -f2- || true)
+
+          if [ -z "$TOKEN" ]; then
+            echo "no DEPLOY_STATUS_TOKEN set — skipping the banner"
+            exit 0
+          fi
+
+          if curl -fsS -X POST "https://$DOMAIN/api/deploy/status" \
+            -H "x-deploy-token: $TOKEN" \
+            -H 'Content-Type: application/json' \
+            -d "{\"inProgress\":true,\"sha\":\"${GITHUB_SHA}\",\"actor\":\"${GITHUB_ACTOR}\"}"; then
+            echo "the site is now showing the deployment banner"
+          else
+            echo "could not announce (site unreachable?) — continuing"
+          fi
+
       - name: Build the images
         run: |
           set -euo pipefail
@@ -59,37 +80,71 @@ jobs:
           docker compose --env-file "$APP_ENV_FILE" ps
           docker image prune -f --filter "until=168h" >/dev/null 2>&1 || true
 
-      - name: Verify the running stack
+      - name: Wait for every container to be healthy
+        run: |
+          set -eo pipefail
+          fail() { echo "::error::$1"; exit 1; }
+
+          pending=0
+
+          for attempt in $(seq 1 60); do
+            pending=0
+
+            for id in $(docker compose --env-file "$APP_ENV_FILE" ps -q); do
+              status=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$id" 2>/dev/null || echo unknown)
+              if [ "$status" != "healthy" ]; then
+                pending=$((pending + 1))
+              fi
+            done
+
+            if [ "$pending" = "0" ]; then
+              echo "all containers healthy after $((attempt * 5))s"
+              break
+            fi
+
+            echo "  attempt $attempt: $pending container(s) still starting"
+            sleep 5
+          done
+
+          [ "$pending" = "0" ] || fail "$pending container(s) never became healthy"
+          docker compose --env-file "$APP_ENV_FILE" ps --format 'table {{.Name}}\t{{.Status}}'
+
+      - name: Verify through the public domain
         run: |
           set -euo pipefail
           fail() { echo "::error::$1"; exit 1; }
 
-          echo "== containers =="
-          docker compose --env-file "$APP_ENV_FILE" ps --format 'table {{.Name}}\t{{.Status}}'
-
-          unhealthy=$(docker compose --env-file "$APP_ENV_FILE" ps --format '{{.Status}}' \
-            | grep -cE 'Restarting|unhealthy|Exit' || true)
-          [ "$unhealthy" = "0" ] || fail "$unhealthy container(s) are not healthy"
-
-          echo
-          echo "== through the public domain =="
           for attempt in $(seq 1 24); do
             code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "https://$DOMAIN/api/health" || true)
             [ "$code" = "200" ] && break
             echo "  attempt $attempt: /api/health -> $code"
             [ "$attempt" = "24" ] && fail "the API never answered on $DOMAIN"
-            sleep 10
+            sleep 5
           done
 
+          echo "== SPA =="
           curl -fsS --max-time 20 "https://$DOMAIN/" | grep -q 'id="root"' \
             || fail "the SPA shell was not served"
 
-          curl -fsS --max-time 20 "https://$DOMAIN/api/health" >/tmp/nascon-api.json
+          echo "== API =="
+          curl -fsS --max-time 20 "https://$DOMAIN/api/health" | tee /tmp/nascon-api.json
           grep -q '"status":"ok"' /tmp/nascon-api.json || fail "the API is not healthy"
 
           echo
           echo "== voice and the audio queue =="
-          curl -fsS --max-time 30 "https://$DOMAIN/voice/health" >/tmp/nascon-voice.json
+          voice_ok=0
+
+          for attempt in $(seq 1 20); do
+            if curl -fsS --max-time 30 "https://$DOMAIN/voice/health" >/tmp/nascon-voice.json 2>/dev/null; then
+              voice_ok=1
+              break
+            fi
+            echo "  attempt $attempt: /voice/health not ready"
+            sleep 5
+          done
+
+          [ "$voice_ok" = "1" ] || fail "/voice/health never answered on $DOMAIN"
+
           python3 - <<'PY'
           import json, sys
 
@@ -115,12 +170,36 @@ jobs:
           echo
           echo "deployed ${GITHUB_SHA}"
 
-      - name: Latest logs when it fails
+      - name: Clear the deployment notice
+        if: always()
+        run: |
+          set -uo pipefail
+          TOKEN=$(grep -E '^DEPLOY_STATUS_TOKEN=' "$APP_ENV_FILE" | cut -d= -f2- || true)
+
+          if [ -z "$TOKEN" ]; then
+            exit 0
+          fi
+
+          for attempt in 1 2 3 4 5 6; do
+            if curl -fsS -X POST "https://$DOMAIN/api/deploy/status" \
+              -H "x-deploy-token: $TOKEN" \
+              -H 'Content-Type: application/json' \
+              -d '{"inProgress":false}'; then
+              echo "banner cleared"
+              exit 0
+            fi
+            echo "  attempt $attempt: could not clear yet"
+            sleep 5
+          done
+
+          echo "::warning::could not clear the banner; it expires on its own after 30 minutes"
+
+      - name: What to do when it fails
         if: failure()
         run: |
           echo "::warning::Investigate on the host:"
           echo "  cd /opt/nascon && docker compose --env-file .env ps"
-          echo "  docker compose --env-file /opt/nascon/.env logs --tail=60"
+          echo "  cd /opt/nascon && docker compose --env-file .env logs --tail=60"
           echo "Roll back with:"
           echo "  cd /opt/nascon && IMAGE_TAG=<previous-tag> docker compose --env-file .env up -d"
           echo

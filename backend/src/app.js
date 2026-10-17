@@ -8,6 +8,7 @@ import aiRoutes from './routes/ai.js';
 import assistantRoutes from './routes/assistant.js';
 import authRoutes from './routes/auth.js';
 import campusRoutes from './routes/campus.js';
+import deployRoutes from './routes/deploy.js';
 import documentRoutes from './routes/documents.js';
 import paymentRoutes from './routes/payments.js';
 import profileRoutes from './routes/profile.js';
@@ -48,6 +49,10 @@ export function createApp() {
   app.use('/api/profile', profileRoutes);
   app.use('/api/ai', aiRoutes);
   app.use('/api/whatsapp', whatsappRoutes);
+
+  // Whether a deployment is currently replacing the stack. Public and read-only
+  // unless DEPLOY_STATUS_TOKEN is set, which only the deploy pipeline does.
+  app.use('/api/deploy', deployRoutes);
 
   app.use((req, res) => {
     res.status(404).json({ error: `Not found: ${req.method} ${req.originalUrl}` });

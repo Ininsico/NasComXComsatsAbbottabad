@@ -1612,6 +1612,77 @@
   grid-column: 1 / -1;
 }
 
+/* Deployment banner ---------------------------------------------------- */
+
+.deploy-banner {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  overflow: hidden;
+  padding: 0.45rem 1rem;
+  background: var(--blue-600);
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+/* The travelling highlight is what makes it read as live rather than broken. */
+.deploy-banner__sweep {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.35), transparent);
+  transform: translateX(-100%);
+  animation: deploy-sweep 1.8s ease-in-out infinite;
+}
+
+.deploy-banner__label {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  text-align: center;
+}
+
+.deploy-banner__spin {
+  animation: deploy-spin 1.2s linear infinite;
+}
+
+.deploy-banner__sha {
+  margin-left: 0.5rem;
+  padding: 0.05rem 0.35rem;
+  border-radius: var(--r-sm);
+  background: rgba(255, 255, 255, 0.2);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.6875rem;
+}
+
+@keyframes deploy-sweep {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes deploy-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .deploy-banner__sweep {
+    animation: none;
+    opacity: 0.2;
+  }
+
+  .deploy-banner__spin {
+    animation: none;
+  }
+}
+
 /* Voice --------------------------------------------------------------- */
 
 .voice-stage {

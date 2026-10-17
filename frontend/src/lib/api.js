@@ -140,6 +140,23 @@ export async function voiceHealth() {
 }
 
 /**
+ * Whether a deployment is currently replacing the stack. Returns null when the API
+ * cannot be reached — which is exactly what happens mid-deploy — so the caller can
+ * keep showing the last known state instead of flickering the banner away.
+ */
+export async function deployStatus() {
+  try {
+    const response = await fetch(`${BASE_URL}/api/deploy/status`);
+
+    if (!response.ok) return null;
+
+    return await response.json();
+  } catch {
+    return null;
+  }
+}
+
+/**
  * One conversational turn: the recording goes to the Python service, which runs
  * VAD, Whisper, retrieval and TTS, and returns the transcript, answer and audio.
  */
