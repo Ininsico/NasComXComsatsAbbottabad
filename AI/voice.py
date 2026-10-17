@@ -195,6 +195,16 @@ def analyse_speech(samples: array, rate: int) -> dict:
         if end - start >= min_speech_frames * frame_size:
             segments.append((start, end))
 
+    # A clip that is speech from end to end has no silence to calibrate against, so
+    # the 10th percentile is not a noise floor and the adaptive gate can end up above
+    # the signal itself. If nothing was found but the clip is plainly not silent,
+    # treat the whole span as speech rather than reporting nothing.
+    if not segments:
+        mean_db = sum(level for _, level in frames) / len(frames)
+
+        if mean_db >= VAD_THRESHOLD_DB:
+            segments = [(0, len(samples))]
+
     return {
         "segments": segments,
         "speech_seconds": round(sum(end - begin for begin, end in segments) / rate, 2),

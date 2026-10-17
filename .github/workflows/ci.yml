@@ -117,12 +117,29 @@ jobs:
           queue = audio_queue.AudioQueue("")
           assert queue.enabled is False, "a broker-less queue must report itself disabled"
 
-          # The VAD must find speech in a synthetic tone and silence in silence.
           from array import array
-          loud = array("h", [12000, -12000] * 8000)
-          quiet = array("h", [0] * 16000)
-          assert voice.analyse_speech(loud, 16000)["segments"], "no speech found in a tone"
-          assert not voice.analyse_speech(quiet, 16000)["segments"], "silence reported as speech"
+
+          # A realistic clip: 0.5 s of silence, a 1.0 s utterance, 1.0 s of silence.
+          lead = array("h", [0] * 8000)
+          speech = array("h", [12000, -12000] * 8000)
+          clip = lead + speech + array("h", [0] * 16000)
+
+          found = voice.analyse_speech(clip, 16000)
+          assert len(found["segments"]) == 1, f"expected one utterance, got {len(found['segments'])}"
+          assert 0.9 <= found["speech_seconds"] <= 1.2, \
+              f"the speech span looks wrong: {found['speech_seconds']}s for a 1.0s burst"
+
+          # Silence must not register as speech.
+          assert not voice.analyse_speech(array("h", [0] * 16000), 16000)["segments"], \
+              "silence was reported as speech"
+
+          # A clip that is speech from end to end has no silence to calibrate against.
+          assert voice.analyse_speech(speech, 16000)["segments"], "an all-speech clip reported as silence"
+
+          # Trimming keeps the utterance and drops the padding.
+          trimmed = voice.trim_to_speech(clip, 16000, found)
+          assert len(speech) < len(trimmed) < len(clip), \
+              f"trimming produced {len(trimmed)} samples from {len(clip)}"
 
           print("AI modules import and the VAD behaves")
           PY
