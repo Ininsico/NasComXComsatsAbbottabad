@@ -152,6 +152,16 @@ export async function startWhatsApp() {
     const wweb = library.default ?? library;
     const { Client, LocalAuth } = wweb;
 
+    // Chromium leaves SingletonLock/SingletonCookie/SingletonSocket in the profile,
+    // naming the host and pid that created them. A recreated container has a new
+    // hostname, so Chromium refuses to start against that profile and the client dies
+    // silently. Clearing them before launch is what lets a deploy keep the session.
+    const profileDir = join(config.whatsapp.sessionPath, 'session-comsats-portal');
+
+    for (const name of ['SingletonLock', 'SingletonCookie', 'SingletonSocket']) {
+      await rm(join(profileDir, name), { force: true, recursive: true });
+    }
+
     let qrcode = null;
 
     try {
@@ -209,12 +219,15 @@ export async function startWhatsApp() {
     client.on('auth_failure', (message) => {
       state.status = 'error';
       state.error = `Authentication failed: ${message}`;
+      // Never silent: a failed session is the one thing that costs a QR re-scan.
+      console.error(`[whatsapp] authentication failed: ${message}`);
     });
 
     client.on('disconnected', (reason) => {
       state.status = 'disconnected';
       state.error = `Disconnected: ${reason}`;
       client = null;
+      console.error(`[whatsapp] disconnected: ${reason}`);
     });
 
     client.on('message', async (message) => {
@@ -239,6 +252,8 @@ export async function startWhatsApp() {
       state.status = 'error';
       state.error = error.message;
       client = null;
+      // Without this line a browser that refuses to start looks like nothing happened.
+      console.error(`[whatsapp] could not start the browser: ${error.message}`);
     }
   })();
 
