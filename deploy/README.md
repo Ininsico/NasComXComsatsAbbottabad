@@ -22,13 +22,6 @@ deploy/
 │   ├── ai.Dockerfile               Flask: embeddings, voice, audio queue worker
 │   ├── chroma.Dockerfile           vector database, pinned to the backend client's version
 │   └── frontend-nginx.conf         SPA fallback + reverse proxies
-├── prometheus/
-│   ├── prometheus.yml            what gets scraped
-│   └── alerts.yml                eight alerting rules (API, Redis, errors, host, deploys)
-├── grafana/
-│   ├── build-dashboards.py       generates the dashboards from a compact spec
-│   ├── provisioning/             datasource + dashboard provider, applied on boot
-│   └── dashboards/*.json         four generated dashboards (34 panels)
 ├── nginx/
 │   └── nascon.artdevelopers.site.conf    host vhost: TLS + proxy to 127.0.0.1:8085
 └── scripts/
@@ -55,8 +48,7 @@ browser ──TLS──▶    │  nascon.artdevelopers.site → 127.0.0.1:8085 
                     ▼                                                    ▼
               backend (Express)                                      ai (Flask)
               ├── chroma:8000                                        ├── chroma:8000
-              ├── ai:8100 (embeddings, voice)                        ├── rabbitmq:5672
-              ├── redis:6379                                         └── redis:6379
+              ├── ai:8100 (embeddings, voice)                        └── rabbitmq:5672
               └── Cloudinary, Groq, Binance
 ```
 
@@ -170,7 +162,6 @@ Every deploy recreates containers but keeps these named volumes:
 | `nascon_backend-data` | `/app/data` (backend) | `users.json`, `documents.json`, `profiles.json`, `deploy-status.json`, **`whatsapp-session/`** |
 | `nascon_ai-data` | `/app/data` (ai) | embedding model cache, audio spool, local vector fallback |
 | `nascon_rabbitmq-data` | `/var/lib/rabbitmq` | queue state |
-| `nascon_redis-data` | `/data` (redis) | the append-only file, so keys survive a restart |
 
 `docker compose down` keeps them; `down -v` destroys them (and you would lose the
 WhatsApp link and every stored document — don't).
@@ -221,120 +212,6 @@ included in `/voice/health`. The management UI is not published — tunnel it:
 ```bash
 ssh -L 15672:127.0.0.1:15672 root@169.58.119.44    # then http://localhost:15672
 ```
-
-## Redis
-
-`redis:7-alpine`, on the compose network as **`redis:6379`** and not published to the
-host. Append-only persistence (`--appendfsync everysec`) and `maxmemory-policy
-noeviction`, so keys survive a restart and Redis refuses a write rather than silently
-dropping one. If it only ever holds disposable cache data, `allkeys-lru` is the better
-policy — that is the one setting worth revisiting.
-
-It is wired but deliberately unused: `REDIS_URL` reaches both the API and the AI
-service, and nothing reads it until you ask for it. Leaving `REDIS_URL` unset disables
-Redis completely.
-
-Using it from an API route — this is what a page will need:
-
-```js
-import { withCache, cacheGet, cacheSet, cacheDel } from '../lib/redis.js';
-
-// 30-second cache around something expensive
-const { value, cached } = await withCache('dashboard:stats', 30, loadStats);
-
-await cacheSet('session:abc', { userId: '…' }, 3600);
-const session = await cacheGet('session:abc');
-await cacheDel('session:abc');
-```
-
-Every helper degrades: no URL, a dead Redis or a blip returns null/false and calls the
-loader rather than failing the request. `GET /api/health` reports
-`redis: { configured, reachable }`, so its state is checkable from outside the host.
-
-Inspect it:
-
-```bash
-docker exec -it nascon-redis-1 redis-cli
-docker exec nascon-redis-1 redis-cli info keyspace
-docker compose --env-file .env restart redis
-```
-
-## Observability
-
-Prometheus scrapes; Grafana draws. Both live on the compose network with no published
-ports, and nothing but Grafana's own login page is reachable from outside.
-
-- **Prometheus** scrapes five jobs: the API's `/metrics`, `node-exporter` (host CPU,
-  memory, disk, network), `cAdvisor` (per-container CPU and memory), `redis-exporter`,
-  and itself.
-- **The API's metrics** are produced by `backend/src/lib/metrics.js` with no dependency:
-  request counts per method/route/status, and a latency **histogram** rather than an
-  average, so `histogram_quantile` gives a real p95. Routes are the matched patterns
-  (`/api/documents/:id`), never concrete URLs, so cardinality stays bounded.
-- **Grafana** is at **<https://nascon.artdevelopers.site/grafana/>** — the frontend
-  nginx proxies `/grafana/` to it, so it needs no extra hostname or certificate. Sign in
-  with `GRAFANA_ADMIN_USER` / `GRAFANA_ADMIN_PASSWORD`; anonymous access and sign-ups are
-  off. The admin console has a Grafana button that opens it.
-- **The dashboards** are provisioned from `deploy/grafana/dashboards/` into the **NASCON**
-  folder, with the first set as the home dashboard:
-
-  | Dashboard | What it answers |
-  | --- | --- |
-  | Platform overview | Is it healthy right now? Requests, p95, errors, host, deploys, firing alerts. |
-  | API detail | Which route is slow or failing? Rate by route/status/method, p50/p95/p99, slowest routes. |
-  | Infrastructure | Host CPU, load, memory, disk, network, uptime, and per-container CPU/memory. |
-  | Data and releases | Redis throughput, memory, clients, hit/miss ratio, evictions, plus deploy progress. |
-
-  They are generated, not hand-edited: `deploy/grafana/build-dashboards.py` holds a
-  compact spec and writes the JSON. Adding a panel is one line there, then run
-  `python deploy/grafana/build-dashboards.py`. Grafana reloads the files every 30s.
-- **Alerts** are Prometheus rules in `deploy/prometheus/alerts.yml`: API down, Redis down,
-  an exporter down, error rate above 5%, p95 above 2s, host memory above 90%, disk above
-  85%, and a deploy stuck for 30 minutes. They evaluate in Prometheus (visible at
-  `/alerts` and in the overview dashboard's "Firing alerts" tile). Grafana has no
-  delivery channel configured — add a contact point under Alerting once you have an
-  email or webhook to send to.
-- **Deploy state is a metric**: `nascon_deploy_in_progress` and `nascon_deploy_percent`
-  are exported by the API, so releases show up on the same charts as traffic.
-- Metric data is kept for 15 days in the `prometheus-data` volume.
-
-To chart something new: record it through `increment()` / `observe()` in
-`backend/src/lib/metrics.js`, and the scrape picks it up with no configuration. Then add
-the PromQL to the dashboard JSON.
-
-Inspect the stack directly. Neither Prometheus nor `/metrics` is published to the host,
-so these run inside the containers:
-
-```bash
-# scrape targets and their health
-docker exec nascon-prometheus-1 wget -qO- http://127.0.0.1:9090/api/v1/targets | head -c 600
-
-# what the API exposes
-docker exec nascon-backend-1 node -e "fetch('http://127.0.0.1:4000/metrics').then(r => r.text()).then(t => console.log(t.slice(0, 700)))"
-
-# Grafana is the only public piece, behind its own login
-curl -sI https://nascon.artdevelopers.site/grafana/ | head -3
-```
-
-## Load tests
-
-k6 scripts in `deploy/loadtest/` that go through nginx to the real stack — no mocks.
-`smoke.js` walks every feature once and asserts what each endpoint returns (public pages,
-student and admin auth, documents, payments, retrieval, a real Groq answer, voice health
-and a real TTS call, and that `/metrics` is *not* public). `load.js` is a weighted mixed
-workload with p95 and error thresholds.
-
-```bash
-bash deploy/scripts/install-k6.sh
-k6 run deploy/loadtest/smoke.js
-k6 run -e VUS=25 deploy/loadtest/load.js
-gh workflow run loadtest.yml -f profile=smoke
-```
-
-They default to `http://127.0.0.1:8085` so the load goes through the same path a browser
-takes without Cloudflare in the way. Groq calls are excluded from the load profile unless
-`-e INCLUDE_AI=1`. Uploads, profile writes and payment intents are not load-tested —
-they mutate state or cost money. Full detail: [loadtest/README.md](loadtest/README.md).
 
 ## Environment and secrets
 

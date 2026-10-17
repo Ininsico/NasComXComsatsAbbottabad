@@ -88,6 +88,12 @@ jobs:
       - name: Roll the stack
         run: |
           set -euo pipefail
+
+          # The .env is the one thing not in git. Keep the previous one before touching
+          # anything, so a bad edit is always one copy away from being undone.
+          cp "$APP_ENV_FILE" "$APP_ENV_FILE.before-deploy" 2>/dev/null || true
+          chmod 600 "$APP_ENV_FILE.before-deploy" 2>/dev/null || true
+
           bash deploy/scripts/announce.sh rolling
           docker compose --env-file "$APP_ENV_FILE" up -d --remove-orphans
           docker compose --env-file "$APP_ENV_FILE" ps
