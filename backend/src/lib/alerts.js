@@ -65,15 +65,25 @@ export function channelsForMember(member, settings) {
   return channels;
 }
 
+/** The deep link an alert carries, so the recipient lands on the record, not a dashboard. */
+export function leadUrl(leadId) {
+  const origin = (process.env.PUBLIC_ORIGIN || 'http://localhost:5173').replace(/\/+$/, '');
+
+  return leadId ? `${origin}/crm/${leadId}` : origin;
+}
+
 function payloadFor(channel, message, settings) {
+  const url = leadUrl(message.leadId);
+  const line = `${message.title}\n${message.body}\n${url}`;
+
   if (channel === 'slack') {
-    return { text: `*${message.title}*\n${message.body}` };
+    return { text: `*${message.title}*\n${message.body}\n<${url}|Open the lead>` };
   }
 
   if (channel === 'telegram') {
     return {
       url: `https://api.telegram.org/bot${settings.alerts.telegramBotToken}/sendMessage`,
-      body: { chat_id: settings.alerts.telegramChatId, text: `${message.title}\n${message.body}` },
+      body: { chat_id: settings.alerts.telegramChatId, text: line },
     };
   }
 
@@ -81,6 +91,7 @@ function payloadFor(channel, message, settings) {
     title: message.title,
     body: message.body,
     leadId: message.leadId ?? null,
+    leadUrl: url,
     level: message.level ?? null,
     at: new Date().toISOString(),
   };

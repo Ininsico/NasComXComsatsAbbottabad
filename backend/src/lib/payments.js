@@ -54,6 +54,45 @@ export async function findIntent(id) {
   return intents.find((intent) => intent.id === id) ?? null;
 }
 
+/** The intent that a provider reference belongs to, so a later event can find its record. */
+export async function findIntentByReference(reference) {
+  if (!reference) return null;
+
+  const intents = await readAll();
+
+  return (
+    intents.find(
+      (intent) =>
+        intent.paymentReference === reference ||
+        (intent.consumedTxIds ?? []).includes(reference),
+    ) ?? null
+  );
+}
+
+/**
+ * Move an intent to a status the provider reported — refunded, failed, abandoned — keeping
+ * the message honest about what happened. Idempotent: the same event twice changes nothing.
+ */
+export async function markIntentStatus({ id, status, note, reference = null }) {
+  return withLock(async () => {
+    const intents = await readAll();
+    const intent = intents.find((entry) => entry.id === id);
+
+    if (!intent) return null;
+    if (intent.status === status) return intent;
+
+    intent.status = status;
+    intent.checkedAt = new Date().toISOString();
+
+    if (note) intent.statusMessage = note;
+    if (reference) intent.paymentReference = reference;
+    if (status === 'refunded') intent.refundedAt = intent.checkedAt;
+
+    await writeAll(intents);
+    return intent;
+  });
+}
+
 export async function createIntent({ user, plan, provider = 'crypto', asset, network, address, workspaceId = null, kind = 'subscription' }) {
   return withLock(async () => {
     const intents = await readAll();

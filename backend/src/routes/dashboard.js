@@ -37,9 +37,29 @@ router.get('/', async (req, res) => {
   const mine = intents.filter((intent) => intent.workspaceId === workspaceId);
   const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
 
-  const collected = mine
-    .filter((intent) => intent.confirmedAt && intent.confirmedAt >= monthStart)
-    .reduce((total, intent) => total + Number(intent.matchedTotal ?? intent.expectedAmount ?? 0), 0);
+  // Collected is money that arrived and stayed: confirmed payments this month, minus the
+  // ones refunded this month. A refund made in the Stripe dashboard therefore lowers the
+  // figure it previously raised, which is the only honest way to count it.
+  const collectedThisMonth = mine.filter(
+    (intent) =>
+      ['confirmed', 'overpaid'].includes(intent.status) &&
+      intent.confirmedAt &&
+      intent.confirmedAt >= monthStart,
+  );
+
+  const refundedThisMonth = mine.filter(
+    (intent) => intent.status === 'refunded' && intent.refundedAt && intent.refundedAt >= monthStart,
+  );
+
+  const collected =
+    collectedThisMonth.reduce(
+      (total, intent) => total + Number(intent.matchedTotal ?? intent.expectedAmount ?? 0),
+      0,
+    ) -
+    refundedThisMonth.reduce(
+      (total, intent) => total + Number(intent.matchedTotal ?? intent.expectedAmount ?? 0),
+      0,
+    );
 
   const awaiting = mine.filter((intent) => intent.status === 'awaiting_payment');
 

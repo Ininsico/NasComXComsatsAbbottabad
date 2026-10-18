@@ -22,6 +22,9 @@ const STATUS_TONES = {
   overpaid: 'pill--pending',
   mismatch: 'pill--problem',
   expired: 'pill--neutral',
+  abandoned: 'pill--neutral',
+  failed: 'pill--problem',
+  refunded: 'pill--problem',
   awaiting_payment: 'pill--info',
 };
 
@@ -30,6 +33,9 @@ const STATUS_LABELS = {
   overpaid: 'Overpaid',
   mismatch: 'Amount mismatch',
   expired: 'Expired',
+  abandoned: 'Abandoned',
+  failed: 'Failed',
+  refunded: 'Refunded',
   awaiting_payment: 'Awaiting deposit',
 };
 

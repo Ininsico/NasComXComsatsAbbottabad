@@ -545,6 +545,66 @@ export async function escalateDue({ now = Date.now(), workspaceId = null } = {})
   return applied;
 }
 
+/**
+ * Someone going unavailable hands their unanswered work over immediately.
+ *
+ * Only unacknowledged, still-open leads move — a lead someone has already replied to stays
+ * with them, which is the stated policy. Each move gets a fresh clock, an activity entry and
+ * an audit event, so the reassignment is visible rather than a silent owner swap.
+ */
+export async function reassignUnacknowledged({ workspaceId, memberId, actorName = 'system' }) {
+  const settings = await getSettings(workspaceId);
+  const members = await listMembers(workspaceId);
+  const closed = closedKeys(settings);
+  const rows = await leads.where((lead) => lead.workspaceId === workspaceId && lead.assigneeId === memberId);
+  const counts = openCounts(rows, settings);
+  const moved = [];
+
+  for (const lead of rows) {
+    if (lead.acknowledgedAt || closed.has(lead.stage) || !lead.ackDeadline) continue;
+
+    const target =
+      pickRoundRobin(members, counts, settings, { exclude: [memberId] }) ??
+      resolveTarget('manager', { members, openCounts: counts, settings, currentAssigneeId: memberId });
+
+    if (!target) continue;
+
+    const assignedAt = nowIso();
+
+    await leads.mutate((all) => {
+      const row = all.find((entry) => entry.id === lead.id);
+
+      if (!row) return;
+
+      row.assigneeId = target.id;
+      row.assignedAt = assignedAt;
+      row.ackDeadline = new Date(Date.now() + settings.acknowledgeSeconds * 1000).toISOString();
+      row.updatedAt = assignedAt;
+    });
+
+    counts[target.id] = (counts[target.id] ?? 0) + 1;
+    moved.push({ leadId: lead.id, to: target.id });
+
+    await addActivity({
+      workspaceId,
+      leadId: lead.id,
+      kind: 'system',
+      summary: `Reassigned to ${target.name} because the previous owner became unavailable`,
+      by: actorName,
+    });
+
+    await audit({
+      workspaceId,
+      actorId: null,
+      action: 'lead.reassigned',
+      target: lead.id,
+      metadata: { from: memberId, to: target.id, reason: 'owner unavailable' },
+    });
+  }
+
+  return moved;
+}
+
 export async function updateLead({ workspaceId, id, patch, actorId = null, actorName = 'system' }) {
   const settings = await getSettings(workspaceId);
   const { lead: changes, errors } = validateLead(patch, {

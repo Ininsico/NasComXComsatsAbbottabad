@@ -191,15 +191,29 @@ router.patch('/members/:id', requirePermission('assignment.manage'), async (req,
 
   const updated = await updateMember(target.id, req.workspace.id, req.body ?? {});
 
+  // Going unavailable is a promise to the customer: their unanswered leads are handed over
+  // now, not at the next escalation tick.
+  let reassigned = [];
+
+  if (req.body?.available === false) {
+    const { reassignUnacknowledged } = await import('../lib/leads.js');
+
+    reassigned = await reassignUnacknowledged({
+      workspaceId: req.workspace.id,
+      memberId: target.id,
+      actorName: req.user.name,
+    });
+  }
+
   await audit({
     workspaceId: req.workspace.id,
     actorId: req.user.id,
     action: 'member.updated',
     target: target.id,
-    metadata: { changes: Object.keys(req.body ?? {}) },
+    metadata: { changes: Object.keys(req.body ?? {}), reassigned: reassigned.length },
   });
 
-  return res.json({ member: updated });
+  return res.json({ member: updated, reassigned });
 });
 
 router.delete('/members/:id', requirePermission('assignment.manage'), async (req, res) => {

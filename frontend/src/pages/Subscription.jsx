@@ -33,6 +33,9 @@ const INVOICE_TONES = {
   overpaid: 'pill--pending',
   mismatch: 'pill--problem',
   expired: 'pill--neutral',
+  abandoned: 'pill--neutral',
+  failed: 'pill--problem',
+  refunded: 'pill--problem',
   awaiting_payment: 'pill--info',
 };
 

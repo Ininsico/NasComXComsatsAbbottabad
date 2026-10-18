@@ -7,8 +7,10 @@ import { workspaceContext } from '../lib/context.js';
 import {
   createIntent,
   findIntent,
+  findIntentByReference,
   listIntents,
   markIntentPaid,
+  markIntentStatus,
   reconcilePayments,
   setIntentCheckout,
 } from '../lib/payments.js';
@@ -328,6 +330,56 @@ export async function stripeWebhookHandler(req, res) {
           reference: session.payment_intent ?? session.id,
           amount: paid,
           note: `Card payment of ${paid.toFixed(2)} ${String(session.currency ?? currency()).toUpperCase()} confirmed by Stripe.`,
+        });
+      }
+    }
+
+    // The failure and reversal statuses the spec asks to show: a checkout the customer
+    // abandoned, a card that was declined, and a refund made in the Stripe dashboard.
+    if (event.type === 'checkout.session.expired') {
+      const session = event.data.object ?? {};
+      const intentId = session.metadata?.intentId ?? session.client_reference_id;
+
+      if (intentId) {
+        await markIntentStatus({
+          id: intentId,
+          status: 'abandoned',
+          note: 'The checkout session expired before it was paid.',
+        });
+      }
+    }
+
+    if (event.type === 'payment_intent.payment_failed') {
+      const paymentIntent = event.data.object ?? {};
+      const intentId = paymentIntent.metadata?.intentId;
+      const target = intentId
+        ? await findIntent(intentId)
+        : await findIntentByReference(paymentIntent.id);
+
+      if (target) {
+        await markIntentStatus({
+          id: target.id,
+          status: 'failed',
+          note:
+            paymentIntent.last_payment_error?.message ??
+            'Stripe reported the card payment as failed.',
+          reference: paymentIntent.id,
+        });
+      }
+    }
+
+    if (event.type === 'charge.refunded' || event.type === 'charge.refund.updated') {
+      const charge = event.data.object ?? {};
+      const target = await findIntentByReference(charge.payment_intent ?? charge.id);
+
+      if (target && target.status !== 'refunded') {
+        const refunded = (charge.amount_refunded ?? charge.amount ?? 0) / 100;
+
+        await markIntentStatus({
+          id: target.id,
+          status: 'refunded',
+          note: `Refunded ${refunded.toFixed(2)} ${String(charge.currency ?? currency()).toUpperCase()} by Stripe. This payment no longer counts as collected revenue.`,
+          reference: charge.payment_intent ?? charge.id,
         });
       }
     }
