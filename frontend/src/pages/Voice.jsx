@@ -476,8 +476,8 @@ export default function Voice() {
 
         {conversation.length === 0 ? (
           <p className="alert alert--info">
-            Nothing yet. Ask something like “When do Fall 2026 admissions close?” or “What is the
-            capital of Japan?” — both work.
+            Nothing yet. Ask something like “How does escalation work when nobody acknowledges a
+            lead?” or “What is the capital of Japan?” — both work.
           </p>
         ) : (
           <ul className="voice-log">

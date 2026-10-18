@@ -71,20 +71,13 @@ async function requestForm(path, token, form) {
 
 export const api = {
   health: () => request('/api/health'),
-  signup: (details) => request('/api/auth/signup', { method: 'POST', body: details }),
   login: (credentials) => request('/api/auth/login', { method: 'POST', body: credentials }),
   me: (token) => request('/api/auth/me', { token }),
-  programs: () => request('/api/campus/programs'),
-  faculty: () => request('/api/campus/faculty'),
-  announcements: () => request('/api/campus/announcements'),
-  overview: (token) => request('/api/account/overview', { token }),
   adminOverview: (token) => request('/api/admin/overview', { token }),
   adminMetrics: (token) => request('/api/admin/metrics', { token }),
 
   // Public: the marketing site's demo form writes straight into the CRM pipeline.
   demoRequest: (payload) => request('/api/crm/demo-request', { method: 'POST', body: payload }),
-  ask: (token, question) =>
-    request('/api/assistant/ask', { method: 'POST', body: { question }, token }),
 
   paymentConfig: (token) => request('/api/payments/config', { token }),
   paymentPlans: (token) => request('/api/payments/plans', { token }),
@@ -94,7 +87,6 @@ export const api = {
     request('/api/payments/intents', { method: 'POST', body: { planId, provider }, token }),
   checkPaymentIntent: (token, id) =>
     request(`/api/payments/intents/${id}/check`, { method: 'POST', token }),
-  wallet: (token) => request('/api/payments/wallet', { token }),
 
   profile: (token) => request('/api/profile', { token }),
   saveProfile: (token, details) => request('/api/profile', { method: 'PUT', body: details, token }),
@@ -105,21 +97,10 @@ export const api = {
     return requestForm('/api/profile/avatar', token, form);
   },
 
-  aiNamespace: (token) => request('/api/ai/namespace', { token }),
-  aiIngest: (token, details) =>
-    request('/api/ai/documents', { method: 'POST', body: details, token }),
-  aiRemove: (token, sourceId) =>
-    request(`/api/ai/documents/${encodeURIComponent(sourceId)}`, { method: 'DELETE', token }),
-  aiAsk: (token, question) =>
-    request('/api/ai/ask', { method: 'POST', body: { question }, token }),
-  aiRetrieve: (token, question) =>
-    request(`/api/ai/retrieve?q=${encodeURIComponent(question)}`, { token }),
-
   whatsappStatus: (token) => request('/api/whatsapp/status', { token }),
   whatsappStart: (token) => request('/api/whatsapp/start', { method: 'POST', token }),
   whatsappStop: (token) => request('/api/whatsapp/stop', { method: 'POST', token }),
   whatsappLogout: (token) => request('/api/whatsapp/logout', { method: 'POST', token }),
-  whatsappMain: (token) => request('/api/whatsapp/main', { token }),
   whatsappSend: (token, to, text) =>
     request('/api/whatsapp/send', { method: 'POST', body: { to, text }, token }),
 };
@@ -184,6 +165,8 @@ export const crmApi = {
     request('/api/crm/activities', { method: 'POST', body, token }),
   alerts: (token) => request('/api/crm/alerts', { token }),
   audit: (token) => request('/api/crm/audit', { token }),
+  /** CSV export. Gated by crm.export; the value column is present only if you may see it. */
+  exportUrl: () => `${BASE_URL}/api/crm/export`,
 };
 
 /** Workspace administration: settings, members and configurable roles. */
@@ -192,11 +175,18 @@ export const workspaceApi = {
   updateSettings: (token, body) =>
     request('/api/workspace/settings', { method: 'PUT', body, token }),
   members: (token) => request('/api/workspace/members', { token }),
+  inviteMember: (token, body) =>
+    request('/api/workspace/members', { method: 'POST', body, token }),
   updateMember: (token, id, body) =>
     request(`/api/workspace/members/${encodeURIComponent(id)}`, { method: 'PATCH', body, token }),
   removeMember: (token, id) =>
     request(`/api/workspace/members/${encodeURIComponent(id)}`, { method: 'DELETE', token }),
   roles: (token) => request('/api/workspace/roles', { token }),
+  createRole: (token, body) => request('/api/workspace/roles', { method: 'POST', body, token }),
+  updateRole: (token, id, body) =>
+    request(`/api/workspace/roles/${encodeURIComponent(id)}`, { method: 'PATCH', body, token }),
+  removeRole: (token, id) =>
+    request(`/api/workspace/roles/${encodeURIComponent(id)}`, { method: 'DELETE', token }),
 };
 
 /** Google Calendar: status, the consent URL and appointment booking. */

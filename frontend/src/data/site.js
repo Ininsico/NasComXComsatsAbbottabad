@@ -76,42 +76,42 @@ export const MODULES = [
   {
     icon: Kanban,
     title: 'Pipeline board',
-    body: 'Six stages from new to enrolled, each with a count and a value. Filter by owner, source or programme, then change a stage in one click — the change is written to the lead’s activity trail.',
+    body: 'Every stage from new to won, each with a count and a value. Filter by owner, source or tag, then move an opportunity in one click — the change is written to the activity trail, and a stage whose required fields are missing refuses the move and says which.',
   },
   {
     icon: Inbox,
     title: 'Lead capture',
-    body: 'The website form creates a lead with a source, so a demo request is in the pipeline before anyone checks an inbox. Duplicate emails and bad phone numbers are rejected at the edge.',
+    body: 'The website form creates a contact and an opportunity with a source, so a demo request is in the pipeline before anyone checks an inbox. Duplicate emails and bad phone numbers are rejected at the edge.',
   },
   {
     icon: MessageSquare,
     title: 'Activity trail',
-    body: 'Calls, emails, meetings and notes attach to the lead with who and when. Move a lead and the stage change is recorded too, so the history explains itself.',
+    body: 'Calls, emails, meetings, messages and notes attach to the record with who and when. Stage changes, assignments and payments are recorded too, so the history explains itself.',
   },
   {
     icon: TrendingUp,
     title: 'Reporting',
-    body: 'Pipeline value, enrolments this month, weekly intake and conversion rate — all derived from live records rather than a nightly export.',
+    body: 'Pipeline value, wins this month, average time to first response and conversion rate — all derived from live records rather than a nightly export.',
   },
   {
     icon: ShieldCheck,
     title: 'Access control',
-    body: 'Read access for the whole team, write access for admins and counsellors. Enforced per route, so a hidden button is never the only protection.',
+    body: 'Owners, admins and members, plus any role you build from permission bundles. Opportunity value can be withheld from a role, and the server omits it rather than hiding a button.',
   },
   {
     icon: Zap,
-    title: 'Fast on a phone',
-    body: 'The lead list and stage control work on a phone at a desk-less event, which is where most leads are actually captured.',
+    title: 'Recovery queue',
+    body: 'Anything unacknowledged past its deadline, escalated twice or untouched for too long is listed with the reason, so nothing quietly rots in the pipeline.',
   },
   {
     icon: Layers,
     title: 'One place for data',
-    body: 'Leads, activities and the people they belong to live in the same store as the rest of the platform, with the same backup and persistence rules.',
+    body: 'Companies, contacts, opportunities, messages, appointments and payments live in the same store, with the same backup and access rules.',
   },
   {
     icon: Users,
     title: 'Built for a small team',
-    body: 'No implementation project. Import your leads, invite two people, and the pipeline is useful the same afternoon.',
+    body: 'No implementation project. Import your contacts, invite two people, and the pipeline is useful the same afternoon.',
   },
 ];
 
@@ -135,7 +135,7 @@ export const TESTIMONIALS = [
     quote:
       'We were tracking leads in a group chat. Two weeks in, every enquiry had an owner and a next step, and nobody had to ask what happened next.',
     name: 'Ayesha Siddiqui',
-    role: 'Admissions lead, 6-person team',
+    role: 'Revenue lead, 6-person team',
   },
   {
     quote:
@@ -161,7 +161,7 @@ export const PLANS = [
       '3 seats',
       'One pipeline, six stages',
       'Email and website capture',
-      '1,000 leads',
+      '1,000 contacts',
       'Activity trail',
       'Community support',
     ],
@@ -174,26 +174,26 @@ export const PLANS = [
     highlight: true,
     features: [
       '10 seats',
-      'Unlimited pipelines',
+      'Three pipelines',
       'WhatsApp and form capture',
-      '25,000 leads',
-      'Automation rules',
+      '10,000 contacts',
+      'Escalation ladders and alerts',
       'Reporting and conversion',
       'Priority support',
     ],
   },
   {
     name: 'Scale',
-    price: 99,
-    annual: 79,
+    price: 129,
+    annual: 105,
     summary: 'For teams with a process to protect and an auditor to satisfy.',
     features: [
-      'Unlimited seats',
-      'Unlimited leads',
+      '100 seats',
+      '25 pipelines',
+      '250,000 contacts',
       'Custom roles and permissions',
-      'Audit log and SSO',
+      'Tamper-evident audit log',
       'Data export and retention',
-      'Onboarding call',
       'Priority support',
     ],
   },
@@ -238,57 +238,12 @@ export const FOOTER_COLUMNS = [
 ];
 
 /**
- * Roles a visitor may choose at signup. Administrators are seeded, not self-registered.
- * The CRM reuses these as its access levels.
+ * The access levels a member can hold. Owner and Admin are assigned inside a workspace;
+ * `user` is what a Google sign-up starts as.
  */
-export const ROLES = [
-  { value: 'student', label: 'Sales rep' },
-  { value: 'parent', label: 'Manager' },
-  { value: 'faculty', label: 'Operations' },
-];
-
 export const ROLE_LABELS = {
-  student: 'Sales rep',
-  parent: 'Manager',
-  faculty: 'Operations',
   admin: 'Administrator',
+  user: 'Member',
 };
 
 export const ADMIN_ROLE = 'admin';
-
-/**
- * Seeded on the API at first boot (backend/src/data/records.js).
- * Drives the instant-login dropdown on the sign-in page.
- */
-export const DEMO_ACCOUNTS = [
-  {
-    label: 'Administrator',
-    summary: 'every pipeline and every record',
-    email: 'admin@comsats-abbottabad.edu.pk',
-    password: 'Admin12345',
-  },
-  {
-    label: 'Sales rep',
-    summary: 'owns a book of leads',
-    email: 'ayesha.siddiqui@comsats-abbottabad.edu.pk',
-    password: 'Student123',
-  },
-  {
-    label: 'Sales rep',
-    summary: 'second rep, separate book',
-    email: 'hamza.riaz@comsats-abbottabad.edu.pk',
-    password: 'Student123',
-  },
-  {
-    label: 'Manager',
-    summary: 'sees the whole team',
-    email: 'rubina.aslam@comsats-abbottabad.edu.pk',
-    password: 'Parent123',
-  },
-  {
-    label: 'Operations',
-    summary: 'documents and records',
-    email: 'sadia.khan@comsats-abbottabad.edu.pk',
-    password: 'Faculty123',
-  },
-];

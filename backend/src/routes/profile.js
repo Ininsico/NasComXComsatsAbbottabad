@@ -1,7 +1,6 @@
 import { Router } from 'express';
 import multer from 'multer';
 import { config } from '../config.js';
-import { FACULTY_LOADS, STUDENT_RECORDS } from '../data/records.js';
 import { requireAuth } from '../lib/auth.js';
 import { uploadToCloudinary } from '../lib/documents.js';
 import {
@@ -20,38 +19,7 @@ const upload = multer({
   limits: { fileSize: config.cloudinary.maxUploadBytes },
 });
 
-/** Read-only facts the campus already knows, shown alongside the editable profile. */
-function contextFor(user) {
-  if (user.role === 'student') {
-    const record = STUDENT_RECORDS[user.email];
-    if (!record) return null;
-
-    return {
-      kind: 'student',
-      registrationNo: record.registrationNo,
-      programme: record.programme,
-      department: record.department,
-      semester: record.semester,
-      section: record.section,
-      advisor: record.advisor,
-      status: record.status,
-    };
-  }
-
-  if (user.role === 'faculty') {
-    const load = FACULTY_LOADS[user.email];
-    if (!load) return null;
-
-    return {
-      kind: 'faculty',
-      designation: load.designation,
-      department: load.department,
-      office: load.office,
-    };
-  }
-
-  return null;
-}
+/** A member's own record: what they can edit, and how complete it is. */
 
 function receiveAvatar(req, res, next) {
   upload.single('file')(req, res, (error) => {
@@ -76,7 +44,6 @@ router.get('/', requireAuth, async (req, res) => {
     user: req.user,
     profile,
     completeness: profileCompleteness(profile),
-    context: contextFor(req.user),
     avatarUploads: config.cloudinary.configured,
   });
 });
@@ -105,7 +72,6 @@ router.put('/', requireAuth, async (req, res) => {
     user,
     profile,
     completeness: profileCompleteness(profile),
-    context: contextFor(user),
   });
 });
 

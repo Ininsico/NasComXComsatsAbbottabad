@@ -1,4 +1,4 @@
-import { CircleCheckBig, Clock, Plus, Search, TriangleAlert, Zap } from 'lucide-react';
+import { CircleCheckBig, Clock, Download, Plus, Search, TriangleAlert, Zap } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/authContext.js';
@@ -26,6 +26,7 @@ export default function Crm() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [showForm, setShowForm] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [error, setError] = useState('');
 
   // The codebase's pattern: fetch in the effect and set state from the promise
@@ -128,6 +129,40 @@ export default function Crm() {
   const pipeline = meta?.stages ?? [];
   const canCreate = (meta?.member?.permissions ?? []).includes('crm.create');
   const canManage = (meta?.member?.permissions ?? []).includes('assignment.manage');
+  const canExport = (meta?.member?.permissions ?? []).includes('crm.export');
+
+  /**
+   * The export needs the Authorization header, so it cannot be a plain link: fetch it, then
+   * hand the browser a blob. The server omits the value column unless the caller may see it.
+   */
+  async function exportCsv() {
+    setExporting(true);
+
+    try {
+      const response = await fetch(crmApi.exportUrl(), {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!response.ok) throw new Error(`The export was refused (${response.status})`);
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+
+      link.href = url;
+      link.download = 'opportunities.csv';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+
+      showToast({ tone: 'success', title: 'Export downloaded' });
+    } catch (exportError) {
+      showToast({ tone: 'error', title: 'Could not export', message: exportError.message });
+    } finally {
+      setExporting(false);
+    }
+  }
   const needle = query.trim().toLowerCase();
   const visible = needle
     ? leads.filter((lead) =>
@@ -151,6 +186,12 @@ export default function Crm() {
             <button type="button" className="btn btn-secondary btn-sm" onClick={runEscalation}>
               <Zap size={14} aria-hidden="true" />
               Run escalation check
+            </button>
+          ) : null}
+          {canExport ? (
+            <button type="button" className="btn btn-secondary btn-sm" onClick={exportCsv} disabled={exporting}>
+              <Download size={14} aria-hidden="true" />
+              {exporting ? 'Exporting…' : 'Export CSV'}
             </button>
           ) : null}
           {canCreate ? (
@@ -177,8 +218,10 @@ export default function Crm() {
         </article>
         <article className="metric-tile">
           <span className="label-micro">Open pipeline</span>
-          <strong>{formatMoney(stats?.pipelineValue)}</strong>
-          <span className="hint">{stats?.weekLeads ?? 0} new this week</span>
+          <strong>{stats?.valueHidden ? 'Restricted' : formatMoney(stats?.pipelineValue)}</strong>
+          <span className="hint">
+            {stats?.valueHidden ? 'your role cannot see opportunity value' : `${stats?.weekLeads ?? 0} new this week`}
+          </span>
         </article>
         <article className="metric-tile">
           <span className="label-micro">Conversion</span>
@@ -302,7 +345,13 @@ export default function Crm() {
                   <Link className="lead-card" to={`/crm/${lead.id}`} key={lead.id}>
                     <div className="lead-card__top">
                       <strong>{lead.name}</strong>
-                      {lead.value > 0 ? <span className="pill pill--neutral">{formatMoney(lead.value)}</span> : null}
+                      {lead.valueHidden ? (
+                        <span className="pill pill--neutral" title="Your role cannot see opportunity value">
+                          Restricted
+                        </span>
+                      ) : lead.value > 0 ? (
+                        <span className="pill pill--neutral">{formatMoney(lead.value)}</span>
+                      ) : null}
                     </div>
 
                     <span className="lead-card__meta">

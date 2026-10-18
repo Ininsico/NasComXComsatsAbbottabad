@@ -8,27 +8,14 @@ const dataDir = join(here, '..', '..', 'data');
 const dbFile = join(dataDir, 'profiles.json');
 
 /** Fields a member can fill in, in the order they appear on the profile page. */
-export const PROFILE_FIELDS = [
-  'phone',
-  'dateOfBirth',
-  'address',
-  'city',
-  'guardianName',
-  'guardianPhone',
-  'programme',
-  'section',
-  'bio',
-];
+export const PROFILE_FIELDS = ['phone', 'jobTitle', 'address', 'city', 'timezone', 'bio'];
 
 const MAX_LENGTHS = {
   phone: 24,
-  dateOfBirth: 10,
+  jobTitle: 80,
   address: 160,
   city: 80,
-  guardianName: 80,
-  guardianPhone: 24,
-  programme: 80,
-  section: 20,
+  timezone: 60,
   bio: 400,
 };
 
@@ -81,20 +68,6 @@ export function validateProfile(input = {}) {
 
   if (values.phone && !/^[+()\d][\d\s()+-]{5,}$/.test(values.phone)) {
     errors.phone = 'Enter a valid phone number';
-  }
-
-  if (values.guardianPhone && !/^[+()\d][\d\s()+-]{5,}$/.test(values.guardianPhone)) {
-    errors.guardianPhone = 'Enter a valid phone number';
-  }
-
-  if (values.dateOfBirth) {
-    const parsed = Date.parse(values.dateOfBirth);
-
-    if (Number.isNaN(parsed)) {
-      errors.dateOfBirth = 'Use a valid date';
-    } else if (parsed > Date.now()) {
-      errors.dateOfBirth = 'Date of birth cannot be in the future';
-    }
   }
 
   return { errors, values };
@@ -153,7 +126,7 @@ export async function saveAvatar(userId, avatarUrl) {
 
 /** How complete a profile is, counting only the fields a member controls. */
 export function profileCompleteness(profile) {
-  const tracked = ['phone', 'dateOfBirth', 'address', 'city', 'guardianName', 'bio'];
+  const tracked = ['phone', 'jobTitle', 'city', 'timezone', 'bio'];
   const filled = tracked.filter((field) => clean(profile?.[field]).length > 0).length;
   const hasAvatar = Boolean(profile?.avatarUrl);
   const total = tracked.length + 1;

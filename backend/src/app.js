@@ -1,13 +1,10 @@
 import cors from 'cors';
 import express from 'express';
 import { config } from './config.js';
-import { countDemoAccounts, DEMO_ACCOUNT_COUNT } from './lib/seed.js';
 import { metricsMiddleware, renderMetrics } from './lib/metrics.js';
 import { redisStatus } from './lib/redis.js';
-import accountRoutes from './routes/account.js';
 import adminRoutes from './routes/admin.js';
 import aiRoutes from './routes/ai.js';
-import assistantRoutes from './routes/assistant.js';
 import authRoutes from './routes/auth.js';
 import calendarRoutes from './routes/calendar.js';
 import crmRoutes from './routes/crm.js';
@@ -56,16 +53,12 @@ export function createApp() {
     res.json({
       status: 'ok',
       env: config.env,
-      demoAccounts: await countDemoAccounts(),
-      demoAccountsExpected: DEMO_ACCOUNT_COUNT,
       redis: await redisStatus(),
     });
   });
 
   app.use('/api/auth', authRoutes);
-  app.use('/api/account', accountRoutes);
   app.use('/api/admin', adminRoutes);
-  app.use('/api/assistant', assistantRoutes);
   app.use('/api/payments', paymentRoutes);
   app.use('/api/profile', profileRoutes);
   app.use('/api/ai', aiRoutes);

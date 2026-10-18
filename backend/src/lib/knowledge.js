@@ -1,7 +1,6 @@
 import { ChromaClient } from 'chromadb';
 import { createAdaptiveStore, createRagPipeline, SHARED_NAMESPACE } from '../../../AI/src/index.js';
 import { config } from '../config.js';
-import { ANNOUNCEMENTS, FACULTY, PROGRAMS } from '../data/campus.js';
 
 /**
  * Single RAG pipeline for the whole backend.
@@ -49,57 +48,88 @@ export const CHAT_GENERATION = {
 export { SHARED_NAMESPACE, store };
 export default pipeline;
 
-function campusDocuments() {
+/**
+ * The corpus the assistant answers from: how this product works.
+ *
+ * Deliberately product help rather than invented customer data — the assistant may state
+ * how the CRM behaves and must not make up a tenant's numbers.
+ */
+function productDocuments() {
   return [
     {
-      sourceId: 'campus-programmes',
-      title: 'Programmes on offer',
-      text: PROGRAMS.map(
-        (programme) =>
-          `${programme.name} — ${programme.faculty}, ${programme.level}, ${programme.duration}, ` +
-          `${programme.credits} credit hours, ${programme.seats} seats. Entry requirement: ` +
-          `${programme.requirement}. Admission test: ${programme.test}. ${programme.summary}`,
-      ).join('\n'),
-    },
-    {
-      sourceId: 'campus-faculty',
-      title: 'Faculty directory',
-      text: FACULTY.map(
-        (member) =>
-          `${member.name} — ${member.designation}, ${member.department}. Research focus: ` +
-          `${member.focus}. Office: ${member.office}. Email: ${member.email}.`,
-      ).join('\n'),
-    },
-    {
-      sourceId: 'campus-announcements',
-      title: 'Campus announcements',
-      text: ANNOUNCEMENTS.map(
-        (item) => `[${item.date}] ${item.title} (${item.category}, for ${item.audience}): ${item.body}`,
-      ).join('\n'),
-    },
-    {
-      sourceId: 'campus-policies',
-      title: 'Policies, dates and contacts',
+      sourceId: 'product-pipeline',
+      title: 'Pipelines and stages',
       text:
-        'Campus: COMSATS University Islamabad, Abbottabad Campus, Park Road, Abbottabad, Khyber Pakhtunkhwa, Pakistan.\n\n' +
-        'Administration office hours are Monday to Friday, 8:30 AM to 4:30 PM. Phone +92 992 383 591. ' +
-        'General email info@comsats-abbottabad.edu.pk. Admissions email admissions@comsats-abbottabad.edu.pk.\n\n' +
-        'Fall 2026 admissions: applications open 1 June 2026, close 31 July 2026. Entrance test 9 August 2026. ' +
-        'First merit list 18 August 2026. Classes begin 8 September 2026.\n\n' +
-        'Admission steps: create an applicant account, submit the online form, upload documents, pay the ' +
-        'processing fee, merit list and interview, then confirm admission by paying the semester fee.\n\n' +
-        'Attendance: students must maintain at least 75% attendance in every course. Falling below this ' +
-        'threshold raises an automatic warning in the portal and can bar a student from the final examination.\n\n' +
-        'Assessment: each course carries sessional marks (quizzes, assignments, attendance) and a final ' +
-        'examination. Sessional weightage is typically 40 to 50 percent. A minimum of 136 credit hours and a ' +
-        'CGPA of 2.0 are required to graduate.\n\n' +
-        'Fees: a full undergraduate semester currently costs about 142,000 PKR, covering tuition and campus ' +
-        'charges. Merit scholarships waive tuition for the top student each semester, and means-tested support ' +
-        'plus interest-free instalment plans are available on written application to the campus director.\n\n' +
-        'Campus facilities: central library open until 8 PM with over 42,000 titles, six computing labs with ' +
-        '240 workstations, engineering workshops, sports complex and a subsidised cafeteria.\n\n' +
-        'Faculty support hours: Monday and Wednesday 10:00 AM to 12:00 PM at departmental offices; Tuesday and ' +
-        'Thursday 2:00 PM to 4:00 PM by appointment through the portal; Friday research supervision only.',
+        'Every workspace runs opportunities on a pipeline. An Admin can add, rename, reorder ' +
+        'and delete stages from Settings, even while opportunities sit in them. Moving an ' +
+        'opportunity into a stage whose required fields are missing is refused with a message ' +
+        'naming the fields, and the opportunity stays where it was.',
+    },
+    {
+      sourceId: 'product-lead-protection',
+      title: 'Assignment, acknowledgement and escalation',
+      text:
+        'New leads are assigned round-robin to members whose status is Available and who are ' +
+        'under their open-lead limit. Busy, On leave and Offline members never receive leads. ' +
+        'Setting a member On leave or Offline immediately reassigns their unacknowledged ' +
+        'opportunities. Each owner gets a countdown; the opportunity counts as acknowledged ' +
+        'when someone clicks Acknowledge or records any action — a note, a message, a call log, ' +
+        'a stage change or an appointment. If the countdown expires the opportunity escalates ' +
+        'through the configured ladder: next eligible rep, then the designated backup, then a ' +
+        'manager. The number of levels and the seconds per level are configurable, and each ' +
+        'step raises an alert to the new owner.',
+    },
+    {
+      sourceId: 'product-recovery',
+      title: 'The recovery queue',
+      text:
+        'The recovery queue lists open opportunities that need a person now: unacknowledged ' +
+        'past the deadline, escalated twice or more, or untouched for longer than the idle ' +
+        'period. Each item states its reason and links to the record.',
+    },
+    {
+      sourceId: 'product-records',
+      title: 'Companies, contacts and opportunities',
+      text:
+        'A company holds many contacts. A contact belongs to a company and holds many ' +
+        'opportunities. Every contact page shows the conversation, the opportunities, the ' +
+        'payments, the appointments, the assigned employee and the full activity history, in ' +
+        'time order with the actor named.',
+    },
+    {
+      sourceId: 'product-permissions',
+      title: 'Permissions and visibility',
+      text:
+        'Workspaces have three base levels — Owner, Admin and User — plus any roles built from ' +
+        'permission bundles, such as a Manager. Permissions cover viewing, creating, editing, ' +
+        'deleting and exporting records, managing assignment rules, managing integrations and ' +
+        'reading the audit log. Opportunity value can be hidden from members who do not hold ' +
+        'the value permission: the server omits it from lists, detail pages and exports rather ' +
+        'than hiding it in the browser. An Owner can never be modified by an Admin.',
+    },
+    {
+      sourceId: 'product-integrations',
+      title: 'Integrations and billing',
+      text:
+        'WhatsApp links one number per workspace from the integrations page; the session is ' +
+        'stored per workspace, so one workspace never messages from another one. Outbound ' +
+        'messages record their status, repeated deliveries are de-duplicated, and a contact who ' +
+        'has opted out is blocked with the reason shown. Google Calendar connects per employee ' +
+        'for appointment booking, with conflicts checked first and times stored with an explicit ' +
+        'timezone. Card payments run through Stripe in test mode: card details are entered on ' +
+        'Stripe and never reach this server, and payments confirm by signature-verified ' +
+        'webhooks. Payments received counts confirmed payments only; projected revenue counts ' +
+        'open opportunities plus unpaid requests.',
+    },
+    {
+      sourceId: 'product-audit',
+      title: 'The audit log',
+      text:
+        'Assignments, acknowledgements, escalations, reassignments, role and permission ' +
+        'changes, pipeline and field configuration changes, integration connections and ' +
+        'deletions are written to a tamper-evident audit log with the actor, the time, the ' +
+        'target and the before and after values. It is readable only with the audit permission, ' +
+        'filterable by event type, user and date, and cannot be edited or deleted.',
     },
   ];
 }
@@ -133,7 +163,7 @@ async function waitForEmbeddings(attempts = 20, delayMs = 3000) {
 }
 
 /** Idempotent: re-ingesting a sourceId replaces that source. */
-export async function seedCampusKnowledge() {
+export async function seedProductKnowledge() {
   const semanticReady = await waitForEmbeddings();
 
   if (config.rag.useSemantic && !semanticReady) {
@@ -144,7 +174,7 @@ export async function seedCampusKnowledge() {
 
   const result = await pipeline.ingestMany({
     namespace: SHARED_NAMESPACE,
-    documents: campusDocuments(),
+    documents: productDocuments(),
   });
 
   return result;

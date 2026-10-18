@@ -63,3 +63,30 @@ export function resolvePermissions({ level, rolePermissions = [], granted = [], 
 
   return PERMISSION_KEYS.filter((key) => effective.has(key));
 }
+
+export const VALUE_PERMISSION = 'opportunity_value.view';
+
+export function canSeeValue(permissions = []) {
+  return permissions.includes(VALUE_PERMISSION);
+}
+
+/**
+ * Remove opportunity value from a record for a caller who may not see it.
+ *
+ * Applied on the server, in every response, because a hidden field in a browser is not
+ * enforcement — the value must not leave the process. The record keeps an explicit
+ * `valueHidden` flag so the UI can say "restricted" instead of showing a misleading zero.
+ */
+export function maskValue(record, permissions) {
+  if (!record || canSeeValue(permissions)) return record;
+
+  const { value, ...rest } = record;
+
+  return { ...rest, value: null, valueHidden: true };
+}
+
+export function maskValues(records, permissions) {
+  if (canSeeValue(permissions)) return records;
+
+  return records.map((record) => maskValue(record, permissions));
+}

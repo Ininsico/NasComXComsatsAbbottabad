@@ -30,14 +30,14 @@ async function resolveSenderNumber(message, from) {
 /**
  * Turns an incoming WhatsApp message into a reply.
  *
- * The sender's number is matched to a member profile so the answer is grounded
- * in that member's own vector space plus the shared campus one. Unrecognised
- * numbers still get an isolated namespace, so they can ask campus questions
- * without ever seeing another member's documents.
+ * The sender's number is matched to a member profile so the answer is grounded in that
+ * member's own vector space plus the shared product-help one. Unrecognised numbers still
+ * get an isolated namespace, so they can ask product questions without ever seeing another
+ * member's documents.
  *
- * Latency matters here, so nothing on the critical path touches the browser
- * unless it has to: group detection reads the chat id, and the typing indicator
- * is fired without being awaited.
+ * Latency matters here, so nothing on the critical path touches the browser unless it has
+ * to: group detection reads the chat id, and the typing indicator is fired without being
+ * awaited.
  */
 export function createWhatsAppHandler() {
   return async function handleIncoming(message) {

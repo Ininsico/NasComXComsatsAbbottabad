@@ -7,7 +7,7 @@ import { authorizationUrl, bookAppointment, busyIntervals, connectionFor, discon
 import { workspaceContext, requirePermission } from '../lib/context.js';
 import { db } from '../lib/db.js';
 import { describe, findMember, listMembers, permissionsFor, removeMember, updateMember } from '../lib/members.js';
-import { LEVELS, LEVEL_LABELS, PERMISSIONS } from '../lib/permissions.js';
+import { LEVELS, LEVEL_LABELS, PERMISSIONS, canSeeValue, maskValue, maskValues } from '../lib/permissions.js';
 import { createRole, findRole, listRoles, removeRole, updateRole } from '../lib/roles.js';
 import { getSettings, saveSettings } from '../lib/settings.js';
 
@@ -77,26 +77,92 @@ router.get('/meta', async (req, res) => {
 
 router.get('/stats', requirePermission('crm.view'), async (req, res) => {
   const { leadStats } = await import('../lib/leads.js');
-  res.json(await leadStats(req.workspace.id));
+  const stats = await leadStats(req.workspace.id);
+
+  // A caller without the value permission must not receive the value, not even as a total.
+  if (!canSeeValue(req.permissions)) {
+    stats.pipelineValue = null;
+    stats.wonValue = null;
+    stats.valueHidden = true;
+    stats.recentLeads = maskValues(stats.recentLeads, req.permissions);
+  }
+
+  res.json(stats);
 });
 
 /** Every open lead that needs a human, with the reason stated per item. */
 router.get('/recovery', requirePermission('crm.view'), async (req, res) => {
   const { recoveryQueue } = await import('../lib/leads.js');
-  res.json(await recoveryQueue(req.workspace.id));
+  const queue = await recoveryQueue(req.workspace.id);
+
+  res.json({ ...queue, items: maskValues(queue.items, req.permissions) });
 });
 
 router.get('/leads', requirePermission('crm.view'), async (req, res) => {
   const { listLeads } = await import('../lib/leads.js');
 
-  res.json({
-    leads: await listLeads(req.workspace.id, {
-      stage: req.query.stage,
-      query: req.query.q,
-      assigneeId: req.query.assigneeId,
-      unacknowledged: req.query.unacknowledged,
-    }),
+  const leads = await listLeads(req.workspace.id, {
+    stage: req.query.stage,
+    query: req.query.q,
+    assigneeId: req.query.assigneeId,
+    unacknowledged: req.query.unacknowledged,
   });
+
+  res.json({ leads: maskValues(leads, req.permissions) });
+});
+
+/**
+ * CSV export, gated by its own permission. The value column is present only for a caller
+ * who may see value — masking a column at the end would still have shipped the numbers in
+ * the response body.
+ */
+router.get('/export', requirePermission('crm.export'), async (req, res) => {
+  const { listLeads } = await import('../lib/leads.js');
+
+  const records = maskValues(await listLeads(req.workspace.id, {}), req.permissions);
+  const showValue = canSeeValue(req.permissions);
+
+  const columns = [
+    'id',
+    'name',
+    'stage',
+    'source',
+    'assigneeId',
+    'value',
+    'ackDeadline',
+    'acknowledgedAt',
+    'escalationLevel',
+    'createdAt',
+    'updatedAt',
+  ];
+
+  const escape = (input) => {
+    const text = input === null || input === undefined ? '' : String(input);
+
+    return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  };
+
+  const rows = records.map((record) =>
+    columns
+      .filter((column) => column !== 'value' || showValue)
+      .map((column) => escape(record[column]))
+      .join(','),
+  );
+
+  const header = columns.filter((column) => column !== 'value' || showValue).join(',');
+  const csv = [header, ...rows].join('\n');
+
+  await audit({
+    workspaceId: req.workspace.id,
+    actorId: req.user.id,
+    action: 'records.exported',
+    metadata: { rows: records.length, includedValue: showValue },
+  });
+
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="opportunities-${req.workspace.id}.csv"`);
+
+  return res.send(csv);
 });
 
 router.get('/leads/:id', requirePermission('crm.view'), async (req, res) => {
@@ -105,7 +171,7 @@ router.get('/leads/:id', requirePermission('crm.view'), async (req, res) => {
 
   if (!lead) return res.status(404).json({ error: 'No such lead' });
 
-  return res.json({ lead });
+  return res.json({ lead: maskValue(lead, req.permissions) });
 });
 
 router.post('/leads', requirePermission('crm.create'), async (req, res) => {

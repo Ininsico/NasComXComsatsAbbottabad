@@ -2,12 +2,15 @@ import { ArrowRight, CircleCheckBig, Rocket } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { BRAND, FEATURES, HERO_STATS, STEPS, TESTIMONIALS } from '../data/site.js';
 
+// The stage names the product actually ships with. Deliberately no counts: this is a
+// marketing illustration, and an invented number on a landing page is a lie a visitor
+// cannot check.
 const PIPELINE = [
-  ['New', 14],
-  ['Contacted', 9],
-  ['Qualified', 6],
-  ['Applied', 3],
-  ['Enrolled', 2],
+  ['New', 'Captured'],
+  ['Contacted', 'First reply'],
+  ['Qualified', 'Budget agreed'],
+  ['Proposal', 'Offer sent'],
+  ['Won', 'Closed'],
 ];
 
 export default function Home() {

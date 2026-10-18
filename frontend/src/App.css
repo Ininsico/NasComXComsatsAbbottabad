@@ -1893,6 +1893,24 @@
   }
 }
 
+/* Google sign-in button ------------------------------------------------- */
+
+.btn-google {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--slate-900, #0f172a);
+  font-weight: 600;
+}
+
+.btn-google:hover {
+  border-color: var(--blue-300, #93c5fd);
+  box-shadow: var(--shadow-card);
+}
+
 /* Usage meters on the subscription page --------------------------------- */
 
 .meter {

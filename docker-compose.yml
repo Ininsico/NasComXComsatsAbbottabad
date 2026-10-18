@@ -265,6 +265,18 @@ services:
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in deploy/.env}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
 
+      # Compose only passes what is listed here. A variable that sits in .env but is absent
+      # from this block never reaches the container — which is exactly how Google reported
+      # "configured: false" while .env held the credentials.
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-https://nascon.artdevelopers.site}
+
+      # One Google client serves both "sign in with Google" and the calendar connection;
+      # they differ only by redirect URI and scope. GOOGLE_IDENTITY_REDIRECT_URI is optional
+      # and only needed if the sign-in callback differs from PUBLIC_ORIGIN's.
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_IDENTITY_REDIRECT_URI: ${GOOGLE_IDENTITY_REDIRECT_URI:-}
+
       CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME}
       CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY}
       CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET}

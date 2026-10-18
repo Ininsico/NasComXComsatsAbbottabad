@@ -75,10 +75,10 @@ export default function Features() {
                 <strong>Qualified.</strong> They have a need and a budget.
               </li>
               <li>
-                <strong>Applied.</strong> Paperwork is moving.
+                <strong>Proposal.</strong> The offer is out and being considered.
               </li>
               <li>
-                <strong>Enrolled.</strong> Won. Counted in revenue.
+                <strong>Won.</strong> Closed, counted in revenue, and the payments are attached.
               </li>
               <li>
                 <strong>Lost.</strong> Closed without a sale, with a reason.

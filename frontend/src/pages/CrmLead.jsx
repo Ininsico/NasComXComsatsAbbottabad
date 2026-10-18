@@ -248,23 +248,33 @@ export default function CrmLead() {
               </div>
             </div>
 
-            <div className="field">
-              <label htmlFor="lead-value-view">Opportunity value</label>
-              <input
-                id="lead-value-view"
-                className="input"
-                type="number"
-                defaultValue={lead.value}
-                disabled={!canEdit}
-                onBlur={(event) => {
-                  const value = Number(event.target.value);
+            {lead.valueHidden ? (
+              <div className="field">
+                <label>Opportunity value</label>
+                <p className="hint" style={{ margin: 0 }}>
+                  Restricted — your role does not include <code>opportunity_value.view</code>. The
+                  server does not send this value to your browser.
+                </p>
+              </div>
+            ) : (
+              <div className="field">
+                <label htmlFor="lead-value-view">Opportunity value</label>
+                <input
+                  id="lead-value-view"
+                  className="input"
+                  type="number"
+                  defaultValue={lead.value}
+                  disabled={!canEdit}
+                  onBlur={(event) => {
+                    const value = Number(event.target.value);
 
-                  if (value !== lead.value) {
-                    void act(() => crmApi.updateLead(token, lead.id, { value }), 'Value updated');
-                  }
-                }}
-              />
-            </div>
+                    if (value !== lead.value) {
+                      void act(() => crmApi.updateLead(token, lead.id, { value }), 'Value updated');
+                    }
+                  }}
+                />
+              </div>
+            )}
 
             {lead.notes ? (
               <div className="field">

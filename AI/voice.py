@@ -1,11 +1,12 @@
 """
-Voice layer for the COMSATS Abbottabad assistant.
+Voice layer for the Nascom CRM assistant.
 
 Three pieces, each replaceable:
 
   STT   Groq Whisper (whisper-large-v3-turbo) — the same key the LLM uses.
-        A prompt biases the decoder toward campus vocabulary, which matters for
-        names like "COMSATS" that a generic decode mangles.
+        A prompt biases the decoder toward CRM vocabulary (opportunity, pipeline,
+        acknowledgement, escalation), which matters for product terms a generic
+        decode mangles.
 
   TTS   Edge neural voices when `edge-tts` is installed (best quality, needs
         network), otherwise Windows SAPI through System.Speech, which is offline
@@ -53,7 +54,7 @@ STT_MODEL = os.getenv("VOICE_STT_MODEL", "whisper-large-v3-turbo")
 STT_LANGUAGE = os.getenv("VOICE_STT_LANGUAGE", "en")
 STT_PROMPT = os.getenv(
     "VOICE_STT_PROMPT",
-    "COMSATS Abbottabad campus. Admission dates, semester fees, programmes, attendance.",
+    "Nascom CRM. Opportunities, pipeline stages, acknowledgement, escalation, workspaces.",
 )
 
 TTS_VOICE = os.getenv("VOICE_TTS_VOICE", "en-US-AriaNeural")
@@ -73,7 +74,7 @@ GROQ_TRANSCRIPTIONS = "https://api.groq.com/openai/v1/audio/transcriptions"
 
 # Cloudflare in front of the API answers 403 (error 1010) to Python's default
 # urllib User-Agent, so every outbound request identifies itself.
-REQUEST_HEADERS = {"User-Agent": "comsats-voice/1.0 (+local)"}
+REQUEST_HEADERS = {"User-Agent": "nascom-voice/1.0 (+local)"}
 
 
 # --------------------------------------------------------------------------- #

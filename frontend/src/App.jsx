@@ -13,6 +13,7 @@ import CrmLead from './pages/CrmLead.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import Deploy from './pages/Deploy.jsx';
 import Features from './pages/Features.jsx';
+import GoogleAuth from './pages/GoogleAuth.jsx';
 import Home from './pages/Home.jsx';
 import Integrations from './pages/Integrations.jsx';
 import Login from './pages/Login.jsx';
@@ -50,6 +51,10 @@ export default function App() {
 
         <Route path="login" element={<Login />} />
         <Route path="signup" element={<Signup />} />
+
+        {/* Where the Google sign-in callback lands. Public by design: the session only
+            exists once the token in the fragment has been adopted. */}
+        <Route path="auth/google" element={<GoogleAuth />} />
 
         {/* Always reachable, signed in or not: the deploy pipeline points here. */}
         <Route path="deploy" element={<Deploy />} />

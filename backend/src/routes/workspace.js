@@ -2,10 +2,12 @@ import { Router } from 'express';
 import { record as audit } from '../lib/audit.js';
 import { requireAuth } from '../lib/auth.js';
 import { requirePermission, workspaceContext } from '../lib/context.js';
-import { describe, listMembers, permissionsFor, removeMember, updateMember } from '../lib/members.js';
+import { describe, listMembers, membershipForUser, permissionsFor, removeMember, updateMember } from '../lib/members.js';
 import { LEVELS, LEVEL_LABELS, PERMISSIONS, outranks } from '../lib/permissions.js';
-import { createRole, listRoles, removeRole, updateRole } from '../lib/roles.js';
+import { createRole, findRole, listRoles, removeRole, updateRole } from '../lib/roles.js';
 import { getSettings, saveSettings } from '../lib/settings.js';
+import { findUserByEmail } from '../lib/store.js';
+import { createMember } from '../lib/members.js';
 
 const router = Router();
 
@@ -54,6 +56,71 @@ router.get('/members', requirePermission('crm.view'), async (req, res) => {
   });
 });
 
+/**
+ * Invite someone into this workspace.
+ *
+ * Accounts are created with Google, so the person has to have signed in once — this adds
+ * their existing account to the workspace rather than creating a credential, which keeps
+ * "who can sign in" separate from "who is in this workspace".
+ */
+router.post('/members', requirePermission('assignment.manage'), async (req, res) => {
+  const email = String(req.body?.email ?? '').trim().toLowerCase();
+  const level = String(req.body?.level ?? 'user');
+
+  if (!email) return res.status(400).json({ error: 'Enter the email address to invite' });
+  if (!LEVELS.includes(level)) return res.status(400).json({ error: `Level must be one of: ${LEVELS.join(', ')}` });
+
+  // You cannot invite someone above yourself, and only an owner may create another owner.
+  if (!outranks(req.member.level, level) && !(req.member.level === 'owner' && level === 'owner')) {
+    return res.status(403).json({ error: 'You cannot invite someone at or above your own level' });
+  }
+
+  const user = await findUserByEmail(email);
+
+  if (!user) {
+    return res.status(404).json({
+      error: 'No account with that address yet. Ask them to sign in with Google once, then invite them.',
+    });
+  }
+
+  const existing = await membershipForUser(user.id);
+
+  if (existing) {
+    return res.status(409).json({
+      error:
+        existing.workspaceId === req.workspace.id
+          ? 'They are already in this workspace'
+          : 'That account already belongs to another workspace',
+    });
+  }
+
+  const roleId = req.body?.roleId ? String(req.body.roleId) : null;
+
+  if (roleId && !(await findRole(roleId, req.workspace.id))) {
+    return res.status(400).json({ error: 'No such role in this workspace' });
+  }
+
+  const member = await createMember({
+    workspaceId: req.workspace.id,
+    userId: user.id,
+    name: user.name,
+    email: user.email,
+    level,
+    roleId,
+    backup: Boolean(req.body?.backup),
+  });
+
+  await audit({
+    workspaceId: req.workspace.id,
+    actorId: req.user.id,
+    action: 'member.invited',
+    target: member.id,
+    metadata: { email: user.email, level, roleId },
+  });
+
+  return res.status(201).json({ member: describe(member, await permissionsFor(member)) });
+});
+
 router.patch('/members/:id', requirePermission('assignment.manage'), async (req, res) => {
   const target = (await listMembers(req.workspace.id)).find((member) => member.id === req.params.id);
 
@@ -66,6 +133,18 @@ router.patch('/members/:id', requirePermission('assignment.manage'), async (req,
 
   if (req.body?.level && !outranks(req.member.level, req.body.level) && req.member.id !== target.id) {
     return res.status(403).json({ error: 'You cannot promote someone to your level or above' });
+  }
+
+  // The workspace must keep an owner: nobody, including the owner themselves, may demote
+  // the last one out of existence.
+  if (target.level === 'owner' && req.body?.level && req.body.level !== 'owner') {
+    const owners = (await listMembers(req.workspace.id)).filter((member) => member.level === 'owner');
+
+    if (owners.length <= 1) {
+      return res.status(400).json({
+        error: 'This is the only owner. Promote someone else to Owner first.',
+      });
+    }
   }
 
   const updated = await updateMember(target.id, req.workspace.id, req.body ?? {});

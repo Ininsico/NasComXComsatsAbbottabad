@@ -95,8 +95,12 @@ export default function Dashboard() {
 
         <Link className="metric-tile" to="/crm">
           <span className="label-micro">Open pipeline value</span>
-          <strong>{money(pipeline.openValue)}</strong>
-          <span className="hint">{money(pipeline.wonValue)} won to date</span>
+          <strong>{data.valueHidden ? 'Restricted' : money(pipeline.openValue)}</strong>
+          <span className="hint">
+            {data.valueHidden
+              ? 'your role cannot see opportunity value'
+              : `${money(pipeline.wonValue)} won to date`}
+          </span>
         </Link>
 
         <article className="metric-tile">
@@ -121,15 +125,19 @@ export default function Dashboard() {
 
         <Link className="metric-tile" to="/subscription">
           <span className="label-micro">Payments received this month</span>
-          <strong>{money(revenue.collectedThisMonth)}</strong>
-          <span className="hint">collected only, not projected</span>
+          <strong>{data.valueHidden ? 'Restricted' : money(revenue.collectedThisMonth)}</strong>
+          <span className="hint">
+            {data.valueHidden ? 'your role cannot see amounts' : 'collected only, not projected'}
+          </span>
         </Link>
 
         <article className="metric-tile">
           <span className="label-micro">Projected revenue</span>
-          <strong>{money(revenue.projected)}</strong>
+          <strong>{data.valueHidden ? 'Restricted' : money(revenue.projected)}</strong>
           <span className="hint">
-            open opportunities plus {revenue.awaitingPaymentRequests} unpaid request(s)
+            {data.valueHidden
+              ? 'your role cannot see amounts'
+              : `open opportunities plus ${revenue.awaitingPaymentRequests} unpaid request(s)`}
           </span>
         </article>
 

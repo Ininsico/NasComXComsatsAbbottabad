@@ -1,183 +1,54 @@
-import { Info } from 'lucide-react';
-import { useState } from 'react';
-import { Link, Navigate, useNavigate } from 'react-router-dom';
+import { ShieldCheck, Users } from 'lucide-react';
+import { Link, Navigate } from 'react-router-dom';
 import AuthShell from '../components/AuthShell.jsx';
+import GoogleSignInButton from '../components/GoogleSignInButton.jsx';
 import { useAuth } from '../context/authContext.js';
-import { useToast } from '../context/toastContext.js';
-import { ROLES } from '../data/site.js';
-import { ApiError } from '../lib/api.js';
 
-const EMPTY_FORM = { name: '', email: '', password: '', confirm: '', role: 'student' };
+const POINTS = [
+  ['A workspace of your own', 'Signing up creates an isolated workspace — your leads, your pipeline, your integrations. Nothing is shared with another company.'],
+  ['No password to lose', 'Google verifies the address, so there is no password reset flow to build, phish or forget.'],
+  ['Owner from the first second', 'You land as the Owner: invite your team, set the assignment rules and connect your own WhatsApp number.'],
+];
 
+/**
+ * Sign-up is Google only. An unknown verified Google address is a new account, and the
+ * server gives it a workspace as Owner — so there is no separate registration form to
+ * keep in step with this one.
+ */
 export default function Signup() {
-  const { signup, user } = useAuth();
-  const { showToast } = useToast();
-  const navigate = useNavigate();
-
-  const [form, setForm] = useState(EMPTY_FORM);
-  const [fieldErrors, setFieldErrors] = useState({});
-  const [error, setError] = useState('');
-  const [submitting, setSubmitting] = useState(false);
+  const { user } = useAuth();
 
   if (user) {
     return <Navigate to="/crm" replace />;
   }
 
-  const update = (field) => (event) =>
-    setForm((previous) => ({ ...previous, [field]: event.target.value }));
-
-  async function handleSubmit(event) {
-    event.preventDefault();
-    setError('');
-    setFieldErrors({});
-
-    if (form.password !== form.confirm) {
-      setFieldErrors({ confirm: 'Passwords do not match' });
-      return;
-    }
-
-    setSubmitting(true);
-
-    try {
-      await signup({
-        name: form.name.trim(),
-        email: form.email.trim(),
-        password: form.password,
-        role: form.role,
-      });
-      showToast({
-        tone: 'success',
-        title: 'Account created',
-        message: 'Your campus portal account is ready.',
-      });
-      navigate('/crm', { replace: true });
-    } catch (signupError) {
-      if (signupError instanceof ApiError && signupError.fields) {
-        setFieldErrors(signupError.fields);
-      }
-      const message = signupError.message ?? 'Unable to create your account. Please try again.';
-      setError(message);
-      showToast({ tone: 'error', title: 'Sign up failed', message });
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
   return (
     <AuthShell>
-      <div className="card">
-        <h1>Create your account</h1>
-        <p className="muted" style={{ fontSize: '0.8125rem' }}>
-          It takes a minute. You can apply for admission straight afterwards.
-        </p>
-
-        {error ? (
-          <p className="alert alert--error" role="alert" style={{ margin: '1rem 0' }}>
-            <Info size={15} aria-hidden="true" />
-            {error}
-          </p>
-        ) : null}
-
-        <form className="form" onSubmit={handleSubmit} noValidate style={{ marginTop: '1.25rem' }}>
-          <div className="field">
-            <label htmlFor="signup-name">Full name</label>
-            <input
-              id="signup-name"
-              className="input"
-              name="name"
-              value={form.name}
-              onChange={update('name')}
-              aria-invalid={Boolean(fieldErrors.name)}
-              autoComplete="name"
-              placeholder="e.g. Ayesha Siddiqui"
-              required
-            />
-            {fieldErrors.name ? <span className="field-error">{fieldErrors.name}</span> : null}
-          </div>
-
-          <div className="field">
-            <label htmlFor="signup-email">Email address</label>
-            <input
-              id="signup-email"
-              className="input"
-              type="email"
-              name="email"
-              value={form.email}
-              onChange={update('email')}
-              aria-invalid={Boolean(fieldErrors.email)}
-              autoComplete="email"
-              placeholder="you@example.com"
-              required
-            />
-            {fieldErrors.email ? <span className="field-error">{fieldErrors.email}</span> : null}
-          </div>
-
-          <div className="field">
-            <label htmlFor="signup-role">I am a</label>
-            <select
-              id="signup-role"
-              className="select"
-              name="role"
-              value={form.role}
-              onChange={update('role')}
-            >
-              {ROLES.map((role) => (
-                <option key={role.value} value={role.value}>
-                  {role.label}
-                </option>
-              ))}
-            </select>
-            {fieldErrors.role ? <span className="field-error">{fieldErrors.role}</span> : null}
-          </div>
-
-          <div className="field">
-            <label htmlFor="signup-password">Password</label>
-            <input
-              id="signup-password"
-              className="input"
-              type="password"
-              name="password"
-              value={form.password}
-              onChange={update('password')}
-              aria-invalid={Boolean(fieldErrors.password)}
-              autoComplete="new-password"
-              required
-            />
-            <span className="hint">At least 8 characters, including a letter and a number.</span>
-            {fieldErrors.password ? (
-              <span className="field-error">{fieldErrors.password}</span>
-            ) : null}
-          </div>
-
-          <div className="field">
-            <label htmlFor="signup-confirm">Confirm password</label>
-            <input
-              id="signup-confirm"
-              className="input"
-              type="password"
-              name="confirm"
-              value={form.confirm}
-              onChange={update('confirm')}
-              aria-invalid={Boolean(fieldErrors.confirm)}
-              autoComplete="new-password"
-              required
-            />
-            {fieldErrors.confirm ? (
-              <span className="field-error">{fieldErrors.confirm}</span>
-            ) : null}
-          </div>
-
-          <button type="submit" className="btn btn-primary btn-block" disabled={submitting}>
-            {submitting ? 'Creating account…' : 'Create account'}
-          </button>
-        </form>
-      </div>
-
-      <p className="auth__switch">
-        Already registered? <Link to="/login">Sign in instead</Link>
+      <h1>Create your workspace</h1>
+      <p className="muted" style={{ fontSize: '0.875rem' }}>
+        Accounts are created with Google. One click, and your workspace is ready.
       </p>
-      <p className="auth__switch" style={{ marginTop: '0.375rem' }}>
-        <Link to="/">Back to the website</Link>
+
+      <GoogleSignInButton label="Sign up with Google" />
+
+      <ul className="stack" style={{ listStyle: 'none', paddingLeft: 0, marginTop: '1.25rem' }}>
+        {POINTS.map(([title, body]) => (
+          <li key={title} style={{ marginBottom: '0.9rem' }}>
+            <strong style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              {title === 'No password to lose' ? (
+                <ShieldCheck size={15} aria-hidden="true" />
+              ) : (
+                <Users size={15} aria-hidden="true" />
+              )}
+              {title}
+            </strong>
+            <span className="hint">{body}</span>
+          </li>
+        ))}
+      </ul>
+
+      <p className="hint">
+        Already have a workspace? <Link to="/login">Sign in</Link>
       </p>
     </AuthShell>
   );

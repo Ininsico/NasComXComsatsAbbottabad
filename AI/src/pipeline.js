@@ -4,12 +4,12 @@
  * Ties the store, the embedder and the generator together. Every call takes an
  * explicit list of namespaces, which is what keeps each member's vector space
  * separate — a member only ever retrieves from their own namespace plus the
- * shared campus one.
+ * shared product-help one.
  */
 import { generateAnswer, DEFAULT_SYSTEM_PROMPT } from './generate.js';
 import { createVectorStore } from './vectorStore.js';
 
-export const SHARED_NAMESPACE = 'shared:campus';
+export const SHARED_NAMESPACE = 'shared:product';
 
 export const memberNamespace = (userId) => `user:${userId}`;
 

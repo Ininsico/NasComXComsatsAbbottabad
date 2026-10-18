@@ -1,23 +1,23 @@
 {
-  "name": "comsats-backend",
+  "name": "nascom-crm-backend",
   "version": "1.0.0",
   "private": true,
-  "description": "COMSATS Abbottabad school management API",
+  "description": "Nascom CRM API: multi-tenant workspaces, pipeline and lead-protection engine",
   "type": "module",
   "main": "src/server.js",
   "scripts": {
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
     "test": "node --test test/*.test.js",
-    "seed": "node src/seed.js",
+    "owner:create": "node src/scripts/createOwner.js",
     "whatsapp:pair": "node src/scripts/whatsapp.js pair",
     "whatsapp:status": "node src/scripts/whatsapp.js status",
     "whatsapp:logout": "node src/scripts/whatsapp.js logout"
   },
   "keywords": [
-    "school-management",
-    "express",
-    "auth"
+    "crm",
+    "multi-tenant",
+    "express"
   ],
   "license": "MIT",
   "dependencies": {

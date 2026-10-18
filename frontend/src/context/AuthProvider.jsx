@@ -44,12 +44,15 @@ export default function AuthProvider({ children }) {
     return data.user;
   }, []);
 
-  const signup = useCallback(async (details) => {
-    const data = await api.signup(details);
-    localStorage.setItem(TOKEN_KEY, data.token);
-    setUser(data.user);
-    setToken(data.token);
-    return data.user;
+  /**
+   * Adopt a session that was created elsewhere — the Google callback hands the browser a
+   * token in the URL fragment and this stores it, which then loads the user like any
+   * other session.
+   */
+  const adoptToken = useCallback((nextToken) => {
+    localStorage.setItem(TOKEN_KEY, nextToken);
+    setLoading(true);
+    setToken(nextToken);
   }, []);
 
   const logout = useCallback(() => {
@@ -59,8 +62,8 @@ export default function AuthProvider({ children }) {
   }, []);
 
   const value = useMemo(
-    () => ({ user, token, loading, login, signup, logout, isAuthenticated: Boolean(user) }),
-    [user, token, loading, login, signup, logout],
+    () => ({ user, token, loading, login, adoptToken, logout, isAuthenticated: Boolean(user) }),
+    [user, token, loading, login, adoptToken, logout],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

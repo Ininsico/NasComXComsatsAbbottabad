@@ -1,0 +1,155 @@
+Build a multi-tenant SaaS CRM for 5–30-employee service businesses.
+
+Each company is a fully isolated workspace with three base levels:
+
+- **Owner** — invites users, assigns levels, grants/removes configurable permissions for
+  view/create/edit/delete/export on CRM records, manage assignment rules, manage
+  integrations, view the audit log. Can never be modified by an Admin.
+- **Admin** — delegated configurer who reshapes pipelines, custom fields, assignment rules
+  and integrations without code.
+- **User** — handles only assigned leads/conversations within their permissions.
+
+Plus a configurable "Manager" role built from permission bundles rather than a hard-coded
+fourth level.
+
+Field-level masking of opportunity value in lists, detail pages and exports. Server-side
+enforcement on every endpoint (hiding a button is never sufficient). Workspace isolation
+that survives guessed identifiers.
+
+The CRM stores Contacts (belonging to a Company, with many Opportunities), Companies and
+Opportunities, on a customizable pipeline whose stages an Admin can add/rename/reorder/
+delete (safely, even with opportunities inside) and between which opportunities move on a
+board or list, blocked with a clear message when stage-specific required fields are
+missing. Admin-created custom fields (text/number/date/dropdown/checkbox) appear
+immediately on forms and detail pages, differing per pipeline while sharing the same
+contact data. Saved lists combining at least three criteria (field, tag, stage, owner,
+date) that auto-update as records start or stop matching. A time-ordered per-record
+activity history of notes, stage changes, assignments, field edits, messages, payments and
+appointments, with actor and timestamp. One complete contact page showing conversations,
+opportunities, payments, appointments, the assigned employee, and the activity history.
+
+Lead protection
+---------------
+
+Leads are captured from a public web form, a Twilio WhatsApp/SMS sandbox inbound message,
+and manual entry, each carrying a source label. They are assigned by Admin-configured
+round-robin only to employees whose status is Available and whose open-lead count is under
+the configured cap (Busy/On leave/Offline never receive leads; setting On leave/Offline
+immediately reassigns unacknowledged leads per a visible stated policy for
+already-acknowledged ones), with a visible acknowledgement countdown (acknowledged =
+clicked Acknowledge OR any recorded action: note, message, call log, stage change,
+appointment) that, when it expires, escalates through a configurable chain (next eligible
+rep → designated backup → manager, number of levels and per-level time configurable in
+seconds for demo), fires a real external alert via a chosen provider (Slack/Telegram/
+transactional email) to the new owner's per-user destination within the same minute,
+records failed alerts with limited retries visible to Admins, and guarantees a lead is
+never owned by two people at once and never double-escalated when two timers expire close
+together.
+
+A recovery queue page lists every lead unacknowledged beyond its window, escalated two or
+more times, or untouched for the configured idle period, with the reason shown per item.
+
+Integrations (all sandbox/test mode)
+------------------------------------
+
+**Twilio WhatsApp/SMS**
+- Signature-verified webhooks (forged requests rejected and recorded).
+- Inbound messages matching known numbers to existing contacts, or creating contact + lead
+  from unknown numbers.
+- Outbound sends with sent/delivered/failed statuses stored and shown.
+- Retry on failed sends, with nothing silently dropped.
+- Webhook duplicate deliveries creating neither duplicate messages nor duplicate leads.
+- Opted-out contacts blocked from messaging, with the reason explained.
+
+**Stripe test mode**
+- Payment links/checkout sessions from an opportunity for a stated amount and currency.
+- Payments confirmed via signature-verified idempotent webhooks, with no manual refresh.
+- Expired/abandoned/failed/refunded statuses shown correctly, including refunds made in the
+  Stripe dashboard.
+- Collected revenue (webhook-confirmed minus confirmed refunds, used only for "payments
+  received" on the dashboard) distinguished from projected revenue (open opportunities plus
+  unpaid payment requests).
+- Each payment traced to its opportunity, contact, requesting employee and provider
+  reference.
+- Card numbers never stored or logged.
+
+**Google Calendar via OAuth 2.0**
+- Per-employee consent to connect/disconnect.
+- Automatic access-token refresh; server-only token storage.
+- Detection of revoked/expired connections, shown as "needs reconnection".
+- Appointment booking from an opportunity or contact that appears in the employee's real
+  Google Calendar and on the customer record.
+- Busy-time conflict prevention or warning.
+- Unambiguous timezone-safe storage.
+- Reschedule/cancel syncing the Google event and recording it in the activity history.
+- An employee without a connected calendar cannot be booked, and is shown why.
+
+**Governance**
+- A central integrations page listing each integration with status (not connected /
+  connected / error), last-worked time, and recent errors.
+- Per-workspace credentials, so one workspace's connection is never used by another.
+- Secrets never sent to the browser, committed to the repo, or shown in full in the UI.
+- A synchronization history recording every inbound event and outbound call with
+  time/result/reference, reviewable by authorized users.
+- Retry-on-temporary versus plain-explanation-on-permanent error handling.
+- Clearly stated per-integration limits (e.g. a WhatsApp sandbox only reaches joined
+  phones).
+- Permission-gated and audited connection changes.
+- Failure isolation so one provider being down leaves the rest of the platform working.
+
+Audit log
+---------
+
+A tamper-resistant log recording assignment, acknowledgement, escalation, reassignment,
+role/permission changes, field/pipeline configuration changes, integration connection
+changes, and deletions, with actor-or-system, time, target, and before/after values where
+relevant. Visible only to users with the audit permission. Filterable by event type, user
+and date. It cannot be edited or deleted by any screen or endpoint.
+
+Operational dashboard
+---------------------
+
+Shows new leads today, open pipeline value by stage, average time to first response (first
+assignment to first acknowledgement), recovery-queue count, escalations in the last 24
+hours, employee availability, upcoming appointments, and payments received this month
+(collected revenue only), where every figure follows the Section 7 glossary definitions and
+matches the underlying records when opened. At least three figures drill down to filtered
+record lists the user is allowed to see. Users see personal figures while Owner/Admin see
+company-wide, and show/hide choices persist.
+
+Interlinking
+------------
+
+The whole thing is one navigable product:
+
+- Login lands on the dashboard.
+- Dashboard drill-downs reach Leads, Opportunities, Recovery Queue, Appointments, Payments,
+  Contact detail, Opportunity detail and Lead detail.
+- Contacts list → Contact detail → Company detail, Opportunity detail, Conversation view,
+  Payment detail, Appointment, and Activity history.
+- Opportunities board → Opportunity detail → Contact, Payment request, Booking, Activity
+  history.
+- Leads list → Lead detail → Contact, Conversation, Reassign, Acknowledge.
+- Recovery queue → Lead detail.
+- Conversations inbox → Conversation view → Contact, Lead (when new), Opportunity.
+- Payments list → Payment detail → Opportunity, Contact.
+- Booking screen → Opportunity, Contact, Google Calendar status.
+- Escalation alerts deep-link to Lead detail.
+- Per-user notification routing lives in settings.
+- The audit log is written by every important action.
+- Settings hosts Members, Roles/Permissions, Pipeline config, Custom fields, Assignment
+  rules, Notification routing and Integrations.
+
+Excluded
+--------
+
+The public marketing site, platform subscription/billing, full accounting (ledgers,
+reconciliation, financial statements), payroll, shift scheduling, legal leave/break rules,
+ad-platform analytics/campaign attribution, a full report builder/BI, and training/
+onboarding modules.
+
+Delivery
+--------
+
+Ships with written startup instructions, an env template, and seed/sample data so a new
+person can run the app from scratch.

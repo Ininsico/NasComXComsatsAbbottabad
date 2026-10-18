@@ -1,4 +1,4 @@
-import { CircleCheckBig, Plus, Save, Trash } from 'lucide-react';
+import { CircleCheckBig, Plus, Save, ShieldCheck, Trash, UserCog } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../context/authContext.js';
 import { useToast } from '../context/toastContext.js';
@@ -7,32 +7,48 @@ import { workspaceApi } from '../lib/api.js';
 const TARGETS = [
   { value: 'next', label: 'Next available rep' },
   { value: 'backup', label: 'Backup member' },
-  { value: 'manager', label: 'Manager (admin or owner)' },
+  { value: 'manager', label: 'Manager (an admin or the owner)' },
 ];
 
+/**
+ * Workspace administration: how work is assigned, who is in the workspace, and what each
+ * role may do.
+ *
+ * A role here is a permission bundle, not a level — "Manager" is just a role someone
+ * created out of the catalog. The server resolves the effective set (level defaults, or
+ * the role's bundle, plus grants, minus revocations) and enforces it on every endpoint,
+ * so this page decides what people may do rather than what they see.
+ */
 export default function WorkspaceSettings() {
   const { token } = useAuth();
   const { showToast } = useToast();
 
-  const [workspace, setWorkspace] = useState(null);
+  const [state, setState] = useState(null);
+  const [roles, setRoles] = useState([]);
   const [settings, setSettings] = useState(null);
-  const [members, setMembers] = useState([]);
-  const [busy, setBusy] = useState(false);
-
-  const fetchAll = useCallback(() => workspaceApi.get(token), [token]);
+  const [newRole, setNewRole] = useState({ name: '', permissions: ['crm.view'] });
+  const [busy, setBusy] = useState('');
 
   const apply = useCallback((payload) => {
-    setWorkspace(payload.workspace);
-    setMembers(payload.members ?? []);
+    setState(payload);
     setSettings(payload.settings);
   }, []);
+
+  const fetchAll = useCallback(async () => {
+    const [workspace, rolePayload] = await Promise.all([workspaceApi.get(token), workspaceApi.roles(token)]);
+
+    return { workspace, roles: rolePayload.roles ?? [] };
+  }, [token]);
 
   const refresh = useCallback(
     () =>
       fetchAll()
-        .then(apply)
-        .catch((refreshError) =>
-          showToast({ tone: 'error', title: 'Could not load the workspace', message: refreshError.message }),
+        .then(({ workspace, roles: list }) => {
+          apply(workspace);
+          setRoles(list);
+        })
+        .catch((error) =>
+          showToast({ tone: 'error', title: 'Could not load the workspace', message: error.message }),
         ),
     [fetchAll, apply, showToast],
   );
@@ -41,12 +57,14 @@ export default function WorkspaceSettings() {
     let active = true;
 
     fetchAll()
-      .then((payload) => {
-        if (active) apply(payload);
+      .then(({ workspace, roles: list }) => {
+        if (!active) return;
+        apply(workspace);
+        setRoles(list);
       })
-      .catch((loadError) => {
+      .catch((error) => {
         if (active) {
-          showToast({ tone: 'error', title: 'Could not load the workspace', message: loadError.message });
+          showToast({ tone: 'error', title: 'Could not load the workspace', message: error.message });
         }
       });
 
@@ -55,46 +73,89 @@ export default function WorkspaceSettings() {
     };
   }, [fetchAll, apply, showToast]);
 
-  async function save(patch) {
-    setBusy(true);
+  async function run(key, action, successTitle) {
+    setBusy(key);
 
     try {
-      const payload = await workspaceApi.updateSettings(token, { ...settings, ...patch });
+      await action();
 
-      setSettings(payload.settings);
-      showToast({ tone: 'success', title: 'Settings saved' });
-    } catch (error) {
-      showToast({ tone: 'error', title: 'Could not save', message: error.message });
-    } finally {
-      setBusy(false);
-    }
-  }
+      if (successTitle) showToast({ tone: 'success', title: successTitle });
 
-  async function patchMember(id, patch) {
-    try {
-      await workspaceApi.updateMember(token, id, patch);
       await refresh();
     } catch (error) {
-      showToast({ tone: 'error', title: 'Could not update the member', message: error.message });
+      showToast({ tone: 'error', title: 'That did not work', message: error.message });
+    } finally {
+      setBusy('');
     }
   }
 
-  if (!settings) return <p className="hint">Loading settings…</p>;
+  if (!state || !settings) return <p className="hint">Loading the workspace…</p>;
 
+  const mine = state.member;
+  const members = state.members ?? [];
+  const levels = state.levels ?? [];
+  const catalog = state.permissions ?? [];
+  const canManage = (mine.permissions ?? []).includes('assignment.manage');
   const ladder = settings.escalation ?? [];
+
+  const groups = catalog.reduce((accumulator, permission) => {
+    accumulator[permission.group] = [...(accumulator[permission.group] ?? []), permission];
+    return accumulator;
+  }, {});
 
   return (
     <>
       <div className="dash-head">
         <div>
           <h1>Workspace settings</h1>
-          <p>{workspace?.name} · the timers here are what the server enforces</p>
+          <p>
+            {state.workspace?.name} · assignment rules, members and what each role may do
+          </p>
         </div>
       </div>
 
+      {!canManage ? (
+        <p className="alert alert--pending" style={{ marginBottom: '1.25rem' }}>
+          <ShieldCheck size={15} aria-hidden="true" />
+          You can read this page, but only a member with <code>assignment.manage</code> can change it.
+        </p>
+      ) : null}
+
+      <section className="card" style={{ marginBottom: '1.25rem' }}>
+        <span className="label-micro">
+          <UserCog size={12} aria-hidden="true" /> Your access
+        </span>
+        <h3 style={{ marginTop: '0.25rem' }}>
+          {mine.name} · {mine.levelLabel}
+          {mine.roleId ? ` · role: ${roles.find((role) => role.id === mine.roleId)?.name ?? mine.roleId}` : ''}
+        </h3>
+
+        <div className="btn-row" style={{ flexWrap: 'wrap', gap: '0.35rem' }}>
+          {catalog.map((permission) => {
+            const held = (mine.permissions ?? []).includes(permission.key);
+
+            return (
+              <span
+                key={permission.key}
+                className={`pill ${held ? 'pill--done' : 'pill--neutral'}`}
+                title={permission.label}
+              >
+                {held ? <CircleCheckBig size={12} aria-hidden="true" /> : null}
+                {permission.key}
+              </span>
+            );
+          })}
+        </div>
+
+        <p className="hint" style={{ marginBottom: 0 }}>
+          These are enforced by the server on every request. Hiding a control is never the
+          protection.
+        </p>
+      </section>
+
       <section className="card" style={{ marginBottom: '1.25rem' }}>
         <span className="label-micro">Acknowledgement</span>
-        <h3 style={{ marginTop: '0.25rem' }}>How long a lead may sit unanswered</h3>
+        <h3 style={{ marginTop: '0.25rem' }}>How long an opportunity may sit unanswered</h3>
 
         <form
           className="form"
@@ -102,11 +163,17 @@ export default function WorkspaceSettings() {
             event.preventDefault();
             const data = new FormData(event.target);
 
-            void save({
-              acknowledgeSeconds: Number(data.get('acknowledgeSeconds')),
-              maxOpenLeads: Number(data.get('maxOpenLeads')),
-              timezone: data.get('timezone'),
-            });
+            void run(
+              'timers',
+              () =>
+                workspaceApi.updateSettings(token, {
+                  acknowledgeSeconds: Number(data.get('acknowledgeSeconds')),
+                  idleHours: Number(data.get('idleHours')),
+                  maxOpenLeads: Number(data.get('maxOpenLeads')),
+                  timezone: data.get('timezone'),
+                }),
+              'Rules saved',
+            );
           }}
         >
           <div className="grid grid-3">
@@ -119,10 +186,23 @@ export default function WorkspaceSettings() {
                 type="number"
                 min="1"
                 defaultValue={settings.acknowledgeSeconds}
+                disabled={!canManage}
               />
             </div>
             <div className="field">
-              <label htmlFor="max-open">Max open leads per member</label>
+              <label htmlFor="idle">Recovery queue after idle (hours)</label>
+              <input
+                id="idle"
+                name="idleHours"
+                className="input"
+                type="number"
+                min="1"
+                defaultValue={settings.idleHours}
+                disabled={!canManage}
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="max-open">Max open per member</label>
               <input
                 id="max-open"
                 name="maxOpenLeads"
@@ -130,15 +210,22 @@ export default function WorkspaceSettings() {
                 type="number"
                 min="1"
                 defaultValue={settings.maxOpenLeads}
+                disabled={!canManage}
               />
             </div>
             <div className="field">
               <label htmlFor="tz">Timezone</label>
-              <input id="tz" name="timezone" className="input" defaultValue={settings.timezone} />
+              <input
+                id="tz"
+                name="timezone"
+                className="input"
+                defaultValue={settings.timezone}
+                disabled={!canManage}
+              />
             </div>
           </div>
 
-          <button type="submit" className="btn btn-primary" disabled={busy}>
+          <button type="submit" className="btn btn-primary" disabled={!canManage || busy === 'timers'}>
             <Save size={15} aria-hidden="true" />
             Save
           </button>
@@ -149,7 +236,8 @@ export default function WorkspaceSettings() {
         <span className="label-micro">Escalation ladder</span>
         <h3 style={{ marginTop: '0.25rem' }}>Who gets it, and when</h3>
         <p className="hint">
-          Each step is an offset from the acknowledgement deadline, so 30 / 60 / 120 means exactly that.
+          Each step is an offset from the acknowledgement deadline, so 30 / 60 / 120 means exactly
+          that.
         </p>
 
         <ul className="voice-log">
@@ -164,23 +252,27 @@ export default function WorkspaceSettings() {
                   min="0"
                   style={{ maxWidth: 110 }}
                   value={step.afterSeconds}
+                  disabled={!canManage}
                   onChange={(event) => {
                     const next = ladder.map((entry, position) =>
                       position === index ? { ...entry, afterSeconds: Number(event.target.value) } : entry,
                     );
+
                     setSettings({ ...settings, escalation: next });
                   }}
                 />
-                <span className="hint">seconds after the deadline â†’</span>
+                <span className="hint">seconds after the deadline →</span>
 
                 <select
                   className="select"
-                  style={{ maxWidth: 220 }}
+                  style={{ maxWidth: 240 }}
                   value={step.to}
+                  disabled={!canManage}
                   onChange={(event) => {
                     const next = ladder.map((entry, position) =>
                       position === index ? { ...entry, to: event.target.value } : entry,
                     );
+
                     setSettings({ ...settings, escalation: next });
                   }}
                 >
@@ -194,7 +286,13 @@ export default function WorkspaceSettings() {
                 <button
                   type="button"
                   className="btn btn-ghost btn-sm"
-                  onClick={() => setSettings({ ...settings, escalation: ladder.filter((_, position) => position !== index) })}
+                  disabled={!canManage}
+                  onClick={() =>
+                    setSettings({
+                      ...settings,
+                      escalation: ladder.filter((_, position) => position !== index),
+                    })
+                  }
                 >
                   <Trash size={14} aria-hidden="true" />
                 </button>
@@ -207,12 +305,8 @@ export default function WorkspaceSettings() {
           <button
             type="button"
             className="btn btn-secondary btn-sm"
-            onClick={() =>
-              setSettings({
-                ...settings,
-                escalation: [...ladder, { afterSeconds: 60, to: 'next' }],
-              })
-            }
+            disabled={!canManage}
+            onClick={() => setSettings({ ...settings, escalation: [...ladder, { afterSeconds: 60, to: 'next' }] })}
           >
             <Plus size={14} aria-hidden="true" />
             Add a step
@@ -221,8 +315,8 @@ export default function WorkspaceSettings() {
           <button
             type="button"
             className="btn btn-primary btn-sm"
-            disabled={busy}
-            onClick={() => save({ escalation: ladder })}
+            disabled={!canManage || busy === 'ladder'}
+            onClick={() => run('ladder', () => workspaceApi.updateSettings(token, { escalation: ladder }), 'Ladder saved')}
           >
             <Save size={14} aria-hidden="true" />
             Save the ladder
@@ -231,7 +325,199 @@ export default function WorkspaceSettings() {
       </section>
 
       <section className="dash-section">
+        <h2 className="dash-section__title">Roles and permissions</h2>
+        <p className="hint">
+          A role is a bundle of permissions. An attached role replaces the level&rsquo;s defaults, so a
+          Member with a Manager role holds exactly what that role lists. The owner always holds
+          everything.
+        </p>
+
+        {canManage ? (
+          <form
+            className="card"
+            style={{ marginBottom: '1rem' }}
+            onSubmit={(event) => {
+              event.preventDefault();
+
+              void run(
+                'create-role',
+                async () => {
+                  await workspaceApi.createRole(token, {
+                    name: newRole.name,
+                    permissions: newRole.permissions,
+                  });
+                  setNewRole({ name: '', permissions: ['crm.view'] });
+                },
+                'Role created',
+              );
+            }}
+          >
+            <span className="label-micro">New role</span>
+
+            <div className="field" style={{ marginTop: '0.5rem' }}>
+              <label htmlFor="role-name">Name</label>
+              <input
+                id="role-name"
+                className="input"
+                placeholder="Manager"
+                value={newRole.name}
+                onChange={(event) => setNewRole({ ...newRole, name: event.target.value })}
+                required
+              />
+            </div>
+
+            {Object.entries(groups).map(([group, permissions]) => (
+              <div key={group} style={{ marginBottom: '0.5rem' }}>
+                <span className="label-micro">{group}</span>
+                <div className="btn-row" style={{ flexWrap: 'wrap', gap: '0.5rem' }}>
+                  {permissions.map((permission) => (
+                    <label key={permission.key} className="hint" style={{ display: 'inline-flex', gap: '0.3rem' }}>
+                      <input
+                        type="checkbox"
+                        checked={newRole.permissions.includes(permission.key)}
+                        onChange={(event) =>
+                          setNewRole({
+                            ...newRole,
+                            permissions: event.target.checked
+                              ? [...newRole.permissions, permission.key]
+                              : newRole.permissions.filter((key) => key !== permission.key),
+                          })
+                        }
+                      />
+                      {permission.label}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ))}
+
+            <button type="submit" className="btn btn-primary btn-sm" disabled={busy === 'create-role'}>
+              <Plus size={14} aria-hidden="true" />
+              Create the role
+            </button>
+          </form>
+        ) : null}
+
+        {roles.length === 0 ? (
+          <p className="hint">No custom roles yet. A Member holds their level&rsquo;s defaults.</p>
+        ) : (
+          roles.map((role) => (
+            <article className="card" key={role.id} style={{ marginBottom: '0.75rem' }}>
+              <div className="pay-panel__head">
+                <div>
+                  <span className="label-micro">Role</span>
+                  <h3 style={{ margin: '0.25rem 0 0' }}>{role.name}</h3>
+                </div>
+                {canManage ? (
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    disabled={busy === role.id}
+                    onClick={() => run(role.id, () => workspaceApi.removeRole(token, role.id), 'Role deleted')}
+                  >
+                    <Trash size={14} aria-hidden="true" />
+                    Delete
+                  </button>
+                ) : null}
+              </div>
+
+              <div className="btn-row" style={{ flexWrap: 'wrap', gap: '0.5rem' }}>
+                {catalog.map((permission) => {
+                  const held = (role.permissions ?? []).includes(permission.key);
+
+                  return (
+                    <label key={permission.key} className="hint" style={{ display: 'inline-flex', gap: '0.3rem' }}>
+                      <input
+                        type="checkbox"
+                        checked={held}
+                        disabled={!canManage || busy === role.id}
+                        onChange={(event) =>
+                          run(
+                            role.id,
+                            () =>
+                              workspaceApi.updateRole(token, role.id, {
+                                permissions: event.target.checked
+                                  ? [...(role.permissions ?? []), permission.key]
+                                  : (role.permissions ?? []).filter((key) => key !== permission.key),
+                              }),
+                            `${role.name} updated`,
+                          )
+                        }
+                      />
+                      {permission.key}
+                    </label>
+                  );
+                })}
+              </div>
+            </article>
+          ))
+        )}
+      </section>
+
+      <section className="dash-section">
         <h2 className="dash-section__title">Members</h2>
+
+        {canManage ? (
+          <form
+            className="card"
+            style={{ marginBottom: '1rem' }}
+            onSubmit={(event) => {
+              event.preventDefault();
+              const data = new FormData(event.target);
+
+              void run(
+                'invite',
+                async () => {
+                  await workspaceApi.inviteMember(token, {
+                    email: data.get('email'),
+                    level: data.get('level'),
+                    roleId: data.get('roleId') || null,
+                  });
+                  event.target.reset();
+                },
+                'Member invited',
+              );
+            }}
+          >
+            <span className="label-micro">Invite someone</span>
+            <p className="hint">
+              Accounts are created with Google, so they sign in once and you add that address here.
+            </p>
+
+            <div className="grid grid-3">
+              <div className="field">
+                <label htmlFor="invite-email">Email address</label>
+                <input id="invite-email" name="email" className="input" type="email" required />
+              </div>
+              <div className="field">
+                <label htmlFor="invite-level">Level</label>
+                <select id="invite-level" name="level" className="select" defaultValue="user">
+                  {levels.map((level) => (
+                    <option key={level.value} value={level.value}>
+                      {level.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="field">
+                <label htmlFor="invite-role">Role</label>
+                <select id="invite-role" name="roleId" className="select" defaultValue="">
+                  <option value="">Level defaults</option>
+                  {roles.map((role) => (
+                    <option key={role.id} value={role.id}>
+                      {role.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <button type="submit" className="btn btn-primary btn-sm" disabled={busy === 'invite'}>
+              <Plus size={14} aria-hidden="true" />
+              Send the invite
+            </button>
+          </form>
+        ) : null}
 
         <div className="table-wrap">
           <table className="table">
@@ -239,20 +525,58 @@ export default function WorkspaceSettings() {
               <tr>
                 <th scope="col">Member</th>
                 <th scope="col">Level</th>
+                <th scope="col">Role</th>
                 <th scope="col">Open limit</th>
                 <th scope="col">Backup</th>
                 <th scope="col">Available</th>
+                <th scope="col">Effective permissions</th>
               </tr>
             </thead>
             <tbody>
               {members.map((member) => (
                 <tr key={member.id}>
-                  <td>
-                    <strong>{member.name}</strong>
+                  <th scope="row">
+                    {member.name}
                     <br />
                     <span className="hint">{member.email}</span>
+                  </th>
+                  <td>
+                    <select
+                      className="select"
+                      value={member.level}
+                      disabled={!canManage}
+                      onChange={(event) =>
+                        run(member.id, () =>
+                          workspaceApi.updateMember(token, member.id, { level: event.target.value }),
+                        )
+                      }
+                    >
+                      {levels.map((level) => (
+                        <option key={level.value} value={level.value}>
+                          {level.label}
+                        </option>
+                      ))}
+                    </select>
                   </td>
-                  <td>{member.levelLabel}</td>
+                  <td>
+                    <select
+                      className="select"
+                      value={member.roleId ?? ''}
+                      disabled={!canManage}
+                      onChange={(event) =>
+                        run(member.id, () =>
+                          workspaceApi.updateMember(token, member.id, { roleId: event.target.value || null }),
+                        )
+                      }
+                    >
+                      <option value="">Level defaults</option>
+                      {roles.map((role) => (
+                        <option key={role.id} value={role.id}>
+                          {role.name}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
                   <td>
                     <input
                       className="input"
@@ -260,10 +584,15 @@ export default function WorkspaceSettings() {
                       min="1"
                       style={{ maxWidth: 90 }}
                       defaultValue={member.openLeadLimit ?? settings.maxOpenLeads}
+                      disabled={!canManage}
                       onBlur={(event) => {
                         const value = Number(event.target.value);
 
-                        if (value !== member.openLeadLimit) void patchMember(member.id, { openLeadLimit: value });
+                        if (value !== member.openLeadLimit) {
+                          void run(member.id, () =>
+                            workspaceApi.updateMember(token, member.id, { openLeadLimit: value }),
+                          );
+                        }
                       }}
                     />
                   </td>
@@ -271,20 +600,28 @@ export default function WorkspaceSettings() {
                     <input
                       type="checkbox"
                       checked={Boolean(member.backup)}
-                      onChange={(event) => void patchMember(member.id, { backup: event.target.checked })}
+                      disabled={!canManage}
+                      onChange={(event) =>
+                        run(member.id, () =>
+                          workspaceApi.updateMember(token, member.id, { backup: event.target.checked }),
+                        )
+                      }
                     />
                   </td>
                   <td>
-                    <label className="hint" style={{ display: 'inline-flex', gap: '0.35rem' }}>
-                      <input
-                        type="checkbox"
-                        checked={Boolean(member.available)}
-                        onChange={(event) => void patchMember(member.id, { available: event.target.checked })}
-                      />
-                      {member.available ? (
-                        <CircleCheckBig size={14} aria-hidden="true" />
-                      ) : null}
-                    </label>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(member.available)}
+                      disabled={!canManage}
+                      onChange={(event) =>
+                        run(member.id, () =>
+                          workspaceApi.updateMember(token, member.id, { available: event.target.checked }),
+                        )
+                      }
+                    />
+                  </td>
+                  <td>
+                    <span className="hint">{member.permissions?.length ?? 0} of {catalog.length}</span>
                   </td>
                 </tr>
               ))}
@@ -293,7 +630,8 @@ export default function WorkspaceSettings() {
         </div>
 
         <p className="hint">
-          Round-robin only considers available members under their limit. A new member is due first.
+          Round-robin only considers available members under their limit. Setting someone
+          unavailable stops new work reaching them.
         </p>
       </section>
     </>

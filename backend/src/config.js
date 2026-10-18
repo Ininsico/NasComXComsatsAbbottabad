@@ -44,7 +44,7 @@ export const config = {
     cloudName: process.env.CLOUDINARY_CLOUD_NAME ?? '',
     apiKey: process.env.CLOUDINARY_API_KEY ?? '',
     apiSecret: process.env.CLOUDINARY_API_SECRET ?? '',
-    folder: process.env.CLOUDINARY_FOLDER ?? 'comsats-abbottabad',
+    folder: process.env.CLOUDINARY_FOLDER ?? 'nascom-crm',
     maxUploadBytes: 8 * 1024 * 1024,
   },
   groq: {

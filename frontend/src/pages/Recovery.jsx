@@ -115,7 +115,11 @@ export default function Recovery() {
                 </h3>
                 <p className="hint" style={{ margin: 0 }}>
                   {lead.assigneeName ?? 'Unassigned'} · {lead.stage} ·{' '}
-                  {lead.value > 0 ? `$${lead.value}` : 'no value set'}
+                  {lead.valueHidden
+                    ? 'value restricted'
+                    : lead.value > 0
+                      ? `$${lead.value}`
+                      : 'no value set'}
                 </p>
               </div>
 

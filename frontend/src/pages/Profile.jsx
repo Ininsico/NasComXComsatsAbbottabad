@@ -1,4 +1,4 @@
-import { BadgeCheck, IdCard, Mail, ShieldCheck, Upload, UserRound } from 'lucide-react';
+import { BadgeCheck, Mail, ShieldCheck, Upload, UserRound } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../context/authContext.js';
 import { useToast } from '../context/toastContext.js';
@@ -7,13 +7,10 @@ import { formatDate } from '../lib/format.js';
 
 const TEXT_FIELDS = [
   { name: 'phone', label: 'Phone number', type: 'tel', placeholder: '+92 300 1234567' },
-  { name: 'dateOfBirth', label: 'Date of birth', type: 'date' },
+  { name: 'jobTitle', label: 'Job title', placeholder: 'Account manager' },
   { name: 'address', label: 'Postal address', placeholder: 'House, street, area' },
   { name: 'city', label: 'City', placeholder: 'Abbottabad' },
-  { name: 'guardianName', label: 'Guardian name', placeholder: 'Full name' },
-  { name: 'guardianPhone', label: 'Guardian phone', type: 'tel', placeholder: '+92 300 7654321' },
-  { name: 'programme', label: 'Programme', placeholder: 'BS Computer Science' },
-  { name: 'section', label: 'Section', placeholder: 'A' },
+  { name: 'timezone', label: 'Timezone', placeholder: 'Asia/Karachi' },
 ];
 
 const EMPTY_PROFILE = Object.fromEntries(
@@ -124,7 +121,7 @@ export default function Profile() {
       <div className="dash-head">
         <div>
           <h1>Your profile</h1>
-          <p>Keep your contact and guardian details up to date for the registrar.</p>
+          <p>Keep your contact details current so the workspace can reach you.</p>
         </div>
         {state.completeness ? (
           <span
@@ -182,7 +179,7 @@ export default function Profile() {
             </section>
 
             <section className="card" style={{ marginTop: '1rem' }}>
-              <span className="label-micro">From the campus record</span>
+              <span className="label-micro">Your account</span>
               <ul className="info-list info-list--inline" style={{ marginTop: '0.75rem' }}>
                 <li>
                   <Mail size={15} aria-hidden="true" />
@@ -194,32 +191,13 @@ export default function Profile() {
                     {state.account?.role} · joined {formatDate(state.account?.createdAt)}
                   </span>
                 </li>
-                {state.context?.registrationNo ? (
-                  <li>
-                    <IdCard size={15} aria-hidden="true" />
-                    <span>
-                      {state.context.registrationNo} · {state.context.semester} · Section{' '}
-                      {state.context.section}
-                    </span>
-                  </li>
-                ) : null}
-                {state.context?.advisor ? (
-                  <li>
-                    <ShieldCheck size={15} aria-hidden="true" />
-                    <span>Advisor: {state.context.advisor}</span>
-                  </li>
-                ) : null}
-                {state.context?.designation ? (
-                  <li>
-                    <ShieldCheck size={15} aria-hidden="true" />
-                    <span>
-                      {state.context.designation} · {state.context.department}
-                    </span>
-                  </li>
-                ) : null}
+                <li>
+                  <ShieldCheck size={15} aria-hidden="true" />
+                  <span>Signed in with Google</span>
+                </li>
               </ul>
               <p className="hint" style={{ margin: '0.75rem 0 0' }}>
-                These come from the registrar and cannot be edited here.
+                Your level and permissions are managed by the workspace owner.
               </p>
             </section>
 
