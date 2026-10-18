@@ -28,6 +28,11 @@ export default function Crm() {
   const [busy, setBusy] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState('');
+  const [lists, setLists] = useState([]);
+  const [listMeta, setListMeta] = useState({ fields: [], ops: [] });
+  const [listDraft, setListDraft] = useState(null);
+  const [selectedList, setSelectedList] = useState(null);
+  const [listBusy, setListBusy] = useState('');
 
   // The codebase's pattern: fetch in the effect and set state from the promise
   // callback, never synchronously in the effect body.
@@ -51,6 +56,72 @@ export default function Crm() {
     [fetchAll, apply],
   );
 
+  const loadLists = useCallback(
+    () =>
+      crmApi
+        .lists(token)
+        .then((payload) => {
+          setLists(payload.lists ?? []);
+          setListMeta({ fields: payload.fields ?? [], ops: payload.ops ?? [] });
+        })
+        .catch(() => {}),
+    [token],
+  );
+
+  /** Load a saved list and its live matches. */
+  async function openList(list) {
+    setListBusy(list.id);
+
+    try {
+      const result = await crmApi.evaluateList(token, list.id);
+
+      setSelectedList(result);
+    } catch (listError) {
+      showToast({ tone: 'error', title: 'Could not evaluate the list', message: listError.message });
+    } finally {
+      setListBusy('');
+    }
+  }
+
+  async function saveList(event) {
+    event.preventDefault();
+
+    if (!listDraft) return;
+
+    setListBusy('save');
+
+    try {
+      await crmApi.createList(token, {
+        name: listDraft.name,
+        criteria: listDraft.criteria.filter((criterion) => criterion.value !== ''),
+      });
+
+      setListDraft(null);
+      await loadLists();
+      showToast({ tone: 'success', title: 'List saved' });
+    } catch (listError) {
+      showToast({ tone: 'error', title: 'Could not save the list', message: listError.message });
+    } finally {
+      setListBusy('');
+    }
+  }
+
+  async function removeList(list) {
+    setListBusy(list.id);
+
+    try {
+      await crmApi.deleteList(token, list.id);
+
+      if (selectedList?.list.id === list.id) setSelectedList(null);
+
+      await loadLists();
+    } catch (listError) {
+      showToast({ tone: 'error', title: 'Could not delete the list', message: listError.message });
+    } finally {
+      setListBusy('');
+    }
+  }
+
   useEffect(() => {
     let active = true;
 
@@ -62,13 +133,15 @@ export default function Crm() {
         if (active) setError(loadError.message);
       });
 
+    loadLists();
+
     const timer = setInterval(refresh, REFRESH_MS);
 
     return () => {
       active = false;
       clearInterval(timer);
     };
-  }, [fetchAll, apply, refresh]);
+  }, [fetchAll, apply, refresh, loadLists]);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000);
@@ -205,6 +278,199 @@ export default function Crm() {
       </div>
 
       {error ? <p className="alert alert--error">{error}</p> : null}
+
+      <section className="card" style={{ marginBottom: '1.25rem' }}>
+        <span className="label-micro">Saved lists</span>
+        <p className="hint" style={{ marginTop: '0.25rem' }}>
+          A list is a set of criteria evaluated live, so it shrinks and grows as records start or
+          stop matching. Combine three or more for the useful ones.
+        </p>
+
+        <div className="btn-row" style={{ flexWrap: 'wrap', gap: '0.4rem' }}>
+          {lists.map((list) => (
+            <span key={list.id} className="btn-row" style={{ gap: '0.2rem' }}>
+              <button
+                type="button"
+                className={`btn btn-sm ${selectedList?.list?.id === list.id ? 'btn-primary' : 'btn-secondary'}`}
+                disabled={listBusy === list.id}
+                onClick={() => openList(list)}
+              >
+                {list.name} · {list.criteria.length}
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                title="Delete this list"
+                disabled={listBusy === list.id}
+                onClick={() => removeList(list)}
+              >
+                ×
+              </button>
+            </span>
+          ))}
+
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            onClick={() => setListDraft({ name: '', criteria: [{ field: 'stage', op: 'eq', value: '' }] })}
+          >
+            <Plus size={14} aria-hidden="true" />
+            New list
+          </button>
+        </div>
+
+        {listDraft ? (
+          <form className="form" style={{ marginTop: '0.75rem' }} onSubmit={saveList}>
+            <div className="field">
+              <label htmlFor="list-name">List name</label>
+              <input
+                id="list-name"
+                className="input"
+                value={listDraft.name}
+                onChange={(event) => setListDraft({ ...listDraft, name: event.target.value })}
+                required
+              />
+            </div>
+
+            {listDraft.criteria.map((criterion, index) => (
+              <div className="btn-row" key={`criterion-${index}`} style={{ alignItems: 'center', gap: '0.4rem' }}>
+                <select
+                  className="select"
+                  style={{ maxWidth: 180 }}
+                  value={criterion.field}
+                  onChange={(event) =>
+                    setListDraft({
+                      ...listDraft,
+                      criteria: listDraft.criteria.map((entry, position) =>
+                        position === index ? { ...entry, field: event.target.value } : entry,
+                      ),
+                    })
+                  }
+                >
+                  {listMeta.fields.map((field) => (
+                    <option key={field.key} value={field.key}>
+                      {field.label}
+                    </option>
+                  ))}
+                </select>
+
+                <select
+                  className="select"
+                  style={{ maxWidth: 160 }}
+                  value={criterion.op}
+                  onChange={(event) =>
+                    setListDraft({
+                      ...listDraft,
+                      criteria: listDraft.criteria.map((entry, position) =>
+                        position === index ? { ...entry, op: event.target.value } : entry,
+                      ),
+                    })
+                  }
+                >
+                  {listMeta.ops.map((op) => (
+                    <option key={op.key} value={op.key}>
+                      {op.label}
+                    </option>
+                  ))}
+                </select>
+
+                <input
+                  className="input"
+                  style={{ maxWidth: 200 }}
+                  value={criterion.value}
+                  placeholder={criterion.field === 'createdAt' ? '2026-10-01' : 'value'}
+                  onChange={(event) =>
+                    setListDraft({
+                      ...listDraft,
+                      criteria: listDraft.criteria.map((entry, position) =>
+                        position === index ? { ...entry, value: event.target.value } : entry,
+                      ),
+                    })
+                  }
+                />
+
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  disabled={listDraft.criteria.length <= 1}
+                  onClick={() =>
+                    setListDraft({
+                      ...listDraft,
+                      criteria: listDraft.criteria.filter((_, position) => position !== index),
+                    })
+                  }
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+
+            <div className="btn-row">
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() =>
+                  setListDraft({
+                    ...listDraft,
+                    criteria: [...listDraft.criteria, { field: 'stage', op: 'eq', value: '' }],
+                  })
+                }
+              >
+                <Plus size={14} aria-hidden="true" />
+                Add criterion
+              </button>
+              <button type="submit" className="btn btn-primary btn-sm" disabled={listBusy === 'save'}>
+                {listBusy === 'save' ? 'Saving…' : 'Save list'}
+              </button>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setListDraft(null)}>
+                Cancel
+              </button>
+            </div>
+          </form>
+        ) : null}
+
+        {selectedList ? (
+          <div style={{ marginTop: '0.75rem' }}>
+            <span className="label-micro">
+              {selectedList.list?.name} · {selectedList.count} match(es) right now
+            </span>
+
+            <div className="table-wrap">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th scope="col">Name</th>
+                    <th scope="col">Stage</th>
+                    <th scope="col">Owner</th>
+                    <th scope="col">Value</th>
+                    <th scope="col">Created</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(selectedList.leads ?? []).map((lead) => (
+                    <tr key={lead.id}>
+                      <th scope="row">
+                        <Link to={`/crm/${lead.id}`}>{lead.name}</Link>
+                      </th>
+                      <td>{lead.stage}</td>
+                      <td>{lead.assigneeName ?? 'Unassigned'}</td>
+                      <td>{lead.valueHidden ? 'Restricted' : formatMoney(lead.value)}</td>
+                      <td>{new Date(lead.createdAt).toLocaleDateString()}</td>
+                    </tr>
+                  ))}
+                  {(selectedList.leads ?? []).length === 0 ? (
+                    <tr>
+                      <td colSpan={5}>
+                        <span className="hint">Nothing matches this list right now.</span>
+                      </td>
+                    </tr>
+                  ) : null}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : null}
+      </section>
 
       <section className="metric-grid" style={{ marginBottom: '1.25rem' }}>
         <article className="metric-tile">

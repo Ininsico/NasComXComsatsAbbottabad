@@ -171,6 +171,14 @@ export const crmApi = {
     request('/api/crm/activities', { method: 'POST', body, token }),
   alerts: (token) => request('/api/crm/alerts', { token }),
   audit: (token) => request('/api/crm/audit', { token }),
+  lists: (token) => request('/api/crm/lists', { token }),
+  createList: (token, body) => request('/api/crm/lists', { method: 'POST', body, token }),
+  updateList: (token, id, body) =>
+    request(`/api/crm/lists/${encodeURIComponent(id)}`, { method: 'PATCH', body, token }),
+  deleteList: (token, id) =>
+    request(`/api/crm/lists/${encodeURIComponent(id)}`, { method: 'DELETE', token }),
+  evaluateList: (token, id) =>
+    request(`/api/crm/lists/${encodeURIComponent(id)}/evaluate`, { token }),
   /** CSV export. Gated by crm.export; the value column is present only if you may see it. */
   exportUrl: () => `${BASE_URL}/api/crm/export`,
 };

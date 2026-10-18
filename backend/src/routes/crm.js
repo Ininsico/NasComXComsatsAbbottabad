@@ -99,6 +99,109 @@ router.get('/recovery', requirePermission('crm.view'), async (req, res) => {
   res.json({ ...queue, items: maskValues(queue.items, req.permissions) });
 });
 
+/**
+ * Saved lists: named criteria evaluated against the live pipeline, so a list shrinks and
+ * grows as records start and stop matching. This is a query, not a snapshot.
+ */
+router.get('/lists', requirePermission('crm.view'), async (req, res) => {
+  const { listSavedLists, LIST_FIELDS, LIST_OPS } = await import('../lib/savedLists.js');
+
+  res.json({
+    lists: await listSavedLists(req.workspace.id),
+    fields: LIST_FIELDS,
+    ops: LIST_OPS,
+  });
+});
+
+router.post('/lists', requirePermission('crm.view'), async (req, res) => {
+  const { createSavedList } = await import('../lib/savedLists.js');
+  const result = await createSavedList({
+    workspaceId: req.workspace.id,
+    input: req.body ?? {},
+    user: req.user,
+  });
+
+  if (result.errors) {
+    return res.status(400).json({ error: 'Please fix the highlighted fields', fields: result.errors });
+  }
+
+  await audit({
+    workspaceId: req.workspace.id,
+    actorId: req.user.id,
+    action: 'list.created',
+    target: result.list.id,
+    metadata: { name: result.list.name, criteria: result.list.criteria.length },
+  });
+
+  return res.status(201).json({ list: result.list });
+});
+
+async function ownedList(req) {
+  const { findSavedList } = await import('../lib/savedLists.js');
+  const list = await findSavedList({ workspaceId: req.workspace.id, id: req.params.id });
+
+  if (!list) return { missing: true };
+  if (list.createdBy !== req.user.id && !req.permissions.includes('assignment.manage')) {
+    return { forbidden: true };
+  }
+
+  return { list };
+}
+
+router.patch('/lists/:id', requirePermission('crm.view'), async (req, res) => {
+  const { updateSavedList } = await import('../lib/savedLists.js');
+  const owned = await ownedList(req);
+
+  if (owned.missing) return res.status(404).json({ error: 'No such list' });
+  if (owned.forbidden) return res.status(403).json({ error: 'Only its author can change this list' });
+
+  const result = await updateSavedList({
+    workspaceId: req.workspace.id,
+    id: req.params.id,
+    input: req.body ?? {},
+  });
+
+  if (result.errors) {
+    return res.status(400).json({ error: 'Please fix the highlighted fields', fields: result.errors });
+  }
+
+  await audit({ workspaceId: req.workspace.id, actorId: req.user.id, action: 'list.updated', target: result.list.id });
+
+  return res.json({ list: result.list });
+});
+
+router.delete('/lists/:id', requirePermission('crm.view'), async (req, res) => {
+  const { deleteSavedList } = await import('../lib/savedLists.js');
+  const owned = await ownedList(req);
+
+  if (owned.missing) return res.status(404).json({ error: 'No such list' });
+  if (owned.forbidden) return res.status(403).json({ error: 'Only its author can delete this list' });
+
+  const result = await deleteSavedList({ workspaceId: req.workspace.id, id: req.params.id });
+
+  await audit({ workspaceId: req.workspace.id, actorId: req.user.id, action: 'list.deleted', target: req.params.id });
+
+  return res.json({ ok: true, removed: result.removed?.name ?? null });
+});
+
+/** Evaluate a saved list against right now. Masked exactly like the board. */
+router.get('/lists/:id/evaluate', requirePermission('crm.view'), async (req, res) => {
+  const { findSavedList, evaluateRows } = await import('../lib/savedLists.js');
+  const { listLeads } = await import('../lib/leads.js');
+
+  const list = await findSavedList({ workspaceId: req.workspace.id, id: req.params.id });
+
+  if (!list) return res.status(404).json({ error: 'No such list' });
+
+  const rows = await listLeads(req.workspace.id, {});
+
+  return res.json({
+    list,
+    count: evaluateRows(rows, list.criteria).length,
+    leads: maskValues(evaluateRows(rows, list.criteria), req.permissions),
+  });
+});
+
 router.get('/leads', requirePermission('crm.view'), async (req, res) => {
   const { listLeads } = await import('../lib/leads.js');
 
