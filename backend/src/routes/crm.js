@@ -1,77 +1,58 @@
 import { Router } from 'express';
-import { requireAuth, requireRole } from '../lib/auth.js';
-import {
-  ACTIVITY_KINDS,
-  SOURCES,
-  STAGES,
-  STAGE_LABELS,
-  addActivity,
-  createLead,
-  crmStats,
-  deleteLead,
-  findLead,
-  listActivities,
-  listLeads,
-  updateLead,
-} from '../lib/crm.js';
+import { randomUUID } from 'node:crypto';
+import { record as audit, listEntries, verifyChain } from '../lib/audit.js';
+import { listAlerts } from '../lib/alerts.js';
+import { requireAuth } from '../lib/auth.js';
+import { authorizationUrl, bookAppointment, busyIntervals, connectionFor, disconnect, googleConfigured, redirectUri, saveTokens } from '../lib/calendar.js';
+import { workspaceContext, requirePermission } from '../lib/context.js';
+import { db } from '../lib/db.js';
+import { describe, findMember, listMembers, permissionsFor, removeMember, updateMember } from '../lib/members.js';
+import { LEVELS, LEVEL_LABELS, PERMISSIONS } from '../lib/permissions.js';
+import { createRole, findRole, listRoles, removeRole, updateRole } from '../lib/roles.js';
+import { getSettings, saveSettings } from '../lib/settings.js';
 
 const router = Router();
 
-/**
- * Public: the marketing site's "book a demo" form posts here, so a visitor becomes a
- * lead in the pipeline instead of an email nobody files. No auth, so it is rate limited
- * per address in memory.
- */
-const submissions = new Map();
-const WINDOW_MS = 10 * 60 * 1000;
-const MAX_PER_WINDOW = 5;
+/** The workspace that public website intake lands in. */
+async function intakeWorkspace() {
+  const workspaces = await db.collection('workspaces').read();
 
-function rateLimited(address) {
-  const now = Date.now();
-  const recent = (submissions.get(address) ?? []).filter((at) => now - at < WINDOW_MS);
+  if (workspaces.length === 0) return null;
 
-  if (recent.length >= MAX_PER_WINDOW) {
-    submissions.set(address, recent);
-    return true;
+  for (const workspace of workspaces) {
+    const settings = await getSettings(workspace.id);
+    if (settings.publicIntake) return workspace;
   }
 
-  recent.push(now);
-  submissions.set(address, recent);
-
-  return false;
+  return workspaces[0];
 }
 
+/**
+ * Public lead intake from the marketing site. Kept on this router so the demo form has
+ * one obvious destination; the workspace is resolved rather than supplied.
+ */
 router.post('/demo-request', async (req, res) => {
-  const address = req.ip ?? 'unknown';
+  const workspace = await intakeWorkspace();
 
-  if (rateLimited(address)) {
-    return res.status(429).json({ error: 'Too many requests. Try again in a few minutes.' });
+  if (!workspace) {
+    return res.status(503).json({ error: 'No workspace is accepting public leads yet' });
   }
 
-  const name = String(req.body?.name ?? '').trim();
-  const email = String(req.body?.email ?? '').trim();
-
-  if (!name || !email) {
-    return res.status(400).json({ error: 'A name and an email address are required' });
-  }
-
-  const company = String(req.body?.company ?? '').trim();
-  const message = String(req.body?.message ?? '').trim();
-
-  const result = await createLead(
-    {
-      name,
-      email,
+  const { createLead } = await import('../lib/leads.js');
+  const result = await createLead({
+    workspaceId: workspace.id,
+    input: {
+      name: req.body?.name,
+      email: req.body?.email,
       phone: req.body?.phone ?? '',
       source: 'website',
-      programme: company,
-      stage: 'new',
-      value: 0,
-      notes: [company ? `Company: ${company}` : '', message].filter(Boolean).join('\n'),
-      owner: '',
+      programme: req.body?.company ?? '',
+      notes: [req.body?.company ? `Company: ${req.body.company}` : '', req.body?.message ?? '']
+        .filter(Boolean)
+        .join('\n'),
     },
-    'website',
-  );
+    actorName: 'website',
+  });
 
   if (result.errors) {
     return res.status(400).json({ error: 'Check the form', fields: result.errors });
@@ -80,86 +61,172 @@ router.post('/demo-request', async (req, res) => {
   return res.status(201).json({ ok: true });
 });
 
-// Everything below needs a session.
-router.use(requireAuth);
+router.use(requireAuth, workspaceContext);
 
-const canEdit = requireRole('admin', 'faculty');
+router.get('/meta', async (req, res) => {
+  const settings = await getSettings(req.workspace.id);
 
-router.get('/meta', (req, res) => {
-  res.json({ stages: STAGES, stageLabels: STAGE_LABELS, sources: SOURCES, activityKinds: ACTIVITY_KINDS });
-});
-
-router.get('/stats', async (req, res) => {
-  res.json(await crmStats());
-});
-
-router.get('/leads', async (req, res) => {
-  const leads = await listLeads({
-    stage: req.query.stage,
-    query: req.query.q,
-    owner: req.query.owner,
+  res.json({
+    stages: settings.pipeline,
+    sources: ['website', 'whatsapp', 'sms', 'walk-in', 'phone', 'referral', 'event', 'manual'],
+    workspace: { id: req.workspace.id, name: req.workspace.name },
+    member: { id: req.member.id, level: req.member.level, permissions: req.permissions },
+    settings: { acknowledgeSeconds: settings.acknowledgeSeconds, maxOpenLeads: settings.maxOpenLeads },
   });
-
-  res.json({ leads });
 });
 
-router.get('/leads/:id', async (req, res) => {
-  const lead = await findLead(req.params.id);
+router.get('/stats', requirePermission('crm.view'), async (req, res) => {
+  const { leadStats } = await import('../lib/leads.js');
+  res.json(await leadStats(req.workspace.id));
+});
+
+router.get('/leads', requirePermission('crm.view'), async (req, res) => {
+  const { listLeads } = await import('../lib/leads.js');
+
+  res.json({
+    leads: await listLeads(req.workspace.id, {
+      stage: req.query.stage,
+      query: req.query.q,
+      assigneeId: req.query.assigneeId,
+      unacknowledged: req.query.unacknowledged,
+    }),
+  });
+});
+
+router.get('/leads/:id', requirePermission('crm.view'), async (req, res) => {
+  const { findLead } = await import('../lib/leads.js');
+  const lead = await findLead(req.params.id, req.workspace.id);
 
   if (!lead) return res.status(404).json({ error: 'No such lead' });
 
-  return res.json({
-    lead,
-    activities: await listActivities({ leadId: lead.id }),
+  return res.json({ lead });
+});
+
+router.post('/leads', requirePermission('crm.create'), async (req, res) => {
+  const { createLead } = await import('../lib/leads.js');
+  const result = await createLead({
+    workspaceId: req.workspace.id,
+    input: req.body,
+    actorId: req.user.id,
+    actorName: req.user.name,
   });
-});
-
-router.post('/leads', canEdit, async (req, res) => {
-  const result = await createLead(req.body, req.user.name);
 
   if (result.errors) {
     return res.status(400).json({ error: 'Check the form', fields: result.errors });
   }
 
-  return res.status(201).json({ lead: result.lead });
+  return res.status(201).json({ lead: result.lead, assignee: result.assignee ?? null });
 });
 
-router.patch('/leads/:id', canEdit, async (req, res) => {
-  const result = await updateLead(req.params.id, req.body, req.user.name);
+router.patch('/leads/:id', requirePermission('crm.edit'), async (req, res) => {
+  const { updateLead } = await import('../lib/leads.js');
+  const result = await updateLead({
+    workspaceId: req.workspace.id,
+    id: req.params.id,
+    patch: req.body,
+    actorId: req.user.id,
+    actorName: req.user.name,
+  });
 
-  if (result.errors) {
-    return res.status(400).json({ error: 'Check the form', fields: result.errors });
-  }
+  if (result.errors) return res.status(400).json({ error: 'Check the form', fields: result.errors });
+  if (result.missing) return res.status(404).json({ error: 'No such lead' });
+
+  return res.json({ lead: result.lead });
+});
+
+router.delete('/leads/:id', requirePermission('crm.delete'), async (req, res) => {
+  const { deleteLead } = await import('../lib/leads.js');
+  const result = await deleteLead({ workspaceId: req.workspace.id, id: req.params.id, actorId: req.user.id });
 
   if (result.missing) return res.status(404).json({ error: 'No such lead' });
 
   return res.json({ lead: result.lead });
 });
 
-router.delete('/leads/:id', canEdit, async (req, res) => {
-  const result = await deleteLead(req.params.id);
+router.post('/leads/:id/acknowledge', requirePermission('crm.edit'), async (req, res) => {
+  const { acknowledgeLead } = await import('../lib/leads.js');
+  const result = await acknowledgeLead({
+    workspaceId: req.workspace.id,
+    id: req.params.id,
+    actorId: req.user.id,
+    actorName: req.user.name,
+  });
 
   if (result.missing) return res.status(404).json({ error: 'No such lead' });
 
   return res.json({ lead: result.lead });
 });
 
-router.get('/activities', async (req, res) => {
+router.post('/leads/:id/assign', requirePermission('assignment.manage'), async (req, res) => {
+  const member = await findMember(String(req.body?.memberId ?? ''), req.workspace.id);
+
+  if (!member) return res.status(400).json({ error: 'Pick a member of this workspace' });
+
+  const { assignLead } = await import('../lib/leads.js');
+  const result = await assignLead({
+    workspaceId: req.workspace.id,
+    id: req.params.id,
+    memberId: member.id,
+    actorId: req.user.id,
+    actorName: req.user.name,
+  });
+
+  if (result.missing) return res.status(404).json({ error: 'No such lead' });
+
+  return res.json({ lead: result.lead });
+});
+
+/** Run the escalation pass now, so a demo does not have to wait for the ticker. */
+router.post('/escalate', requirePermission('assignment.manage'), async (req, res) => {
+  const { escalateDue } = await import('../lib/leads.js');
+  const applied = await escalateDue({ workspaceId: req.workspace.id });
+
+  res.json({ applied });
+});
+
+router.get('/activities', requirePermission('crm.view'), async (req, res) => {
+  const { listActivities } = await import('../lib/leads.js');
+  res.json({ activities: await listActivities(req.workspace.id, { leadId: req.query.leadId, limit: req.query.limit }) });
+});
+
+router.post('/activities', requirePermission('crm.edit'), async (req, res) => {
+  const { addActivity, findLead } = await import('../lib/leads.js');
+  const lead = await findLead(String(req.body?.leadId ?? ''), req.workspace.id);
+
+  if (!lead) return res.status(404).json({ error: 'No such lead' });
+
+  const summary = String(req.body?.summary ?? '').trim();
+
+  if (!summary) return res.status(400).json({ error: 'Write what happened' });
+
+  const activity = await addActivity({
+    workspaceId: req.workspace.id,
+    leadId: lead.id,
+    kind: req.body?.kind ?? 'note',
+    summary,
+    by: req.user.name,
+  });
+
+  await audit({
+    workspaceId: req.workspace.id,
+    actorId: req.user.id,
+    action: 'activity.created',
+    target: lead.id,
+    metadata: { kind: activity.kind },
+  });
+
+  return res.status(201).json({ activity });
+});
+
+router.get('/alerts', requirePermission('integrations.manage'), async (req, res) => {
+  res.json({ alerts: await listAlerts(req.workspace.id) });
+});
+
+router.get('/audit', requirePermission('audit.view'), async (req, res) => {
   res.json({
-    activities: await listActivities({ leadId: req.query.leadId, limit: req.query.limit }),
+    entries: await listEntries(req.workspace.id),
+    chain: await verifyChain(req.workspace.id),
   });
-});
-
-router.post('/activities', canEdit, async (req, res) => {
-  const result = await addActivity(req.body, req.user.name);
-
-  if (result.errors) {
-    return res.status(400).json({ error: 'Check the form', fields: result.errors });
-  }
-
-  if (result.missing) return res.status(404).json({ error: 'No such lead' });
-
-  return res.status(201).json({ activity: result.activity });
 });
 
 export default router;

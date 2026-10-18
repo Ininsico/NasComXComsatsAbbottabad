@@ -10,12 +10,14 @@ import aiRoutes from './routes/ai.js';
 import assistantRoutes from './routes/assistant.js';
 import authRoutes from './routes/auth.js';
 import campusRoutes from './routes/campus.js';
+import calendarRoutes from './routes/calendar.js';
 import crmRoutes from './routes/crm.js';
 import deployRoutes from './routes/deploy.js';
 import documentRoutes from './routes/documents.js';
 import paymentRoutes from './routes/payments.js';
 import profileRoutes from './routes/profile.js';
 import whatsappRoutes from './routes/whatsapp.js';
+import workspaceRoutes from './routes/workspace.js';
 
 export function createApp() {
   const app = express();
@@ -65,6 +67,12 @@ export function createApp() {
   // The CRM: leads, pipeline and activity. /demo-request is public so the marketing
   // site's form feeds the pipeline directly.
   app.use('/api/crm', crmRoutes);
+
+  // Workspace administration: settings, members, configurable roles.
+  app.use('/api/workspace', workspaceRoutes);
+
+  // Google Calendar: OAuth callback (public) plus booking for a lead.
+  app.use('/api/calendar', calendarRoutes);
 
   // Whether a deployment is currently replacing the stack. Public and read-only
   // unless DEPLOY_STATUS_TOKEN is set, which only the deploy pipeline does.

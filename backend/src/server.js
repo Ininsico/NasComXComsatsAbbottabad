@@ -1,8 +1,10 @@
 import { createApp } from './app.js';
 import { config } from './config.js';
+import { startEscalationTicker } from './lib/escalation.js';
 import { seedCampusKnowledge } from './lib/knowledge.js';
 import { startPaymentWatcher } from './lib/paymentWatcher.js';
 import { seedDemoAccounts } from './lib/seed.js';
+import { seedDemoWorkspace } from './lib/seedWorkspace.js';
 import { setWhatsAppHandler, sessionInfo, startWhatsApp } from './lib/whatsapp.js';
 import { createWhatsAppHandler } from './lib/whatsappBot.js';
 
@@ -21,6 +23,20 @@ if (seeded.length > 0) {
   console.log(`Seeded ${seeded.length} demo account(s).`);
 }
 
+// One workspace with the demo accounts as its team, so round-robin assignment and the
+// escalation ladder are observable immediately after boot.
+try {
+  const demo = await seedDemoWorkspace();
+
+  if (demo) {
+    console.log(
+      `Workspace "${demo.workspace.name}" ready · ${demo.members} member(s) added · ${demo.acknowledgeSeconds}s acknowledge timer`,
+    );
+  }
+} catch (error) {
+  console.error(`Workspace seeding failed: ${error.message}`);
+}
+
 // Index the published campus knowledge so the RAG pipeline can retrieve it.
 try {
   const knowledge = await seedCampusKnowledge();
@@ -32,8 +48,11 @@ try {
 const app = createApp();
 
 app.listen(config.port, () => {
-  console.log(`COMSATS API listening on http://localhost:${config.port} (${config.env})`);
+  console.log(`Nascom CRM API listening on http://localhost:${config.port} (${config.env})`);
   startPaymentWatcher();
+
+  // The promise of the product: a lead nobody acknowledges escalates by itself.
+  startEscalationTicker();
 
   setWhatsAppHandler(createWhatsAppHandler());
 
