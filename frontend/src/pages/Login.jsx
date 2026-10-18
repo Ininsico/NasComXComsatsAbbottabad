@@ -1,4 +1,4 @@
-import { CircleAlert, CircleCheckBig, Info } from 'lucide-react';
+import { CircleAlert, CircleCheckBig, Info, ShieldCheck } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import AuthShell from '../components/AuthShell.jsx';
@@ -12,7 +12,7 @@ import { api, API_BASE_URL, ApiError } from '../lib/api.js';
  * operator created through the CLI (`npm run owner:create`).
  */
 export default function Login() {
-  const { login, user } = useAuth();
+  const { login, adoptToken, user } = useAuth();
   const { showToast } = useToast();
   const navigate = useNavigate();
   const location = useLocation();
@@ -23,6 +23,7 @@ export default function Login() {
   const [submitting, setSubmitting] = useState(false);
   const [apiStatus, setApiStatus] = useState('checking');
   const [googleInfo, setGoogleInfo] = useState(null);
+  const [instantAdmin, setInstantAdmin] = useState(null);
 
   useEffect(() => {
     let active = true;
@@ -41,6 +42,14 @@ export default function Login() {
       .googleInfo()
       .then((payload) => {
         if (active) setGoogleInfo(payload);
+      })
+      .catch(() => {});
+
+    // 404s unless INSTANT_LOGIN is enabled, which is the point: no button, no endpoint.
+    api
+      .instantLoginInfo()
+      .then((payload) => {
+        if (active) setInstantAdmin(payload);
       })
       .catch(() => {});
 
@@ -94,6 +103,23 @@ export default function Login() {
     }
   }
 
+  /** Signs into the configured administrator without a password. */
+  async function signInAsAdmin() {
+    setSubmitting(true);
+
+    try {
+      const result = await api.instantLogin();
+
+      adoptToken(result.token);
+      showToast({ tone: 'success', title: `Signed in as ${result.user.name}` });
+      navigate(redirectTo, { replace: true });
+    } catch (instantError) {
+      showToast({ tone: 'error', title: 'Could not sign in', message: instantError.message });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   return (
     <AuthShell>
       <div className="card">
@@ -121,6 +147,25 @@ export default function Login() {
         <div className="field" style={{ marginTop: '1.25rem' }}>
           <GoogleSignInButton />
         </div>
+
+        {instantAdmin ? (
+          <button
+            type="button"
+            className="btn btn-secondary btn-block"
+            style={{ marginTop: '0.5rem' }}
+            disabled={submitting}
+            onClick={signInAsAdmin}
+          >
+            <ShieldCheck size={15} aria-hidden="true" />
+            {submitting ? 'Signing in…' : `Sign in as Administrator`}
+          </button>
+        ) : null}
+
+        {instantAdmin ? (
+          <p className="hint" style={{ textAlign: 'center', marginTop: '0.35rem' }}>
+            {instantAdmin.email}
+          </p>
+        ) : null}
 
         {googleInfo ? (
           <details className="google-setup">

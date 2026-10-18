@@ -77,6 +77,17 @@ export const config = {
     clientId: process.env.GOOGLE_CLIENT_ID ?? '',
     clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? '',
   },
+  /**
+   * The "sign in as administrator" button. Off unless INSTANT_LOGIN=true, because it
+   * hands out a session without a password. It only ever signs into the configured
+   * bootstrap account, which is created (once) when the email and password are present.
+   */
+  instantLogin: {
+    enabled: String(process.env.INSTANT_LOGIN ?? '').toLowerCase() === 'true',
+    adminEmail: String(process.env.BOOTSTRAP_ADMIN_EMAIL ?? '').trim().toLowerCase(),
+    adminPassword: process.env.BOOTSTRAP_ADMIN_PASSWORD ?? '',
+    adminName: process.env.BOOTSTRAP_ADMIN_NAME ?? 'Administrator',
+  },
   rag: {
     topK: toInt(process.env.RAG_TOP_K, 4),
     minScore: toFloat(process.env.RAG_MIN_SCORE, 0.05),

@@ -76,6 +76,9 @@ export const api = {
 
   /** The exact callback URLs this server sends Google, so a mismatch can be fixed. */
   googleInfo: () => request('/api/auth/google-info'),
+  /** The administrator instant-login button. 404s when it is not enabled. */
+  instantLoginInfo: () => request('/api/auth/instant-login'),
+  instantLogin: () => request('/api/auth/instant-login', { method: 'POST' }),
   adminOverview: (token) => request('/api/admin/overview', { token }),
   adminMetrics: (token) => request('/api/admin/metrics', { token }),
 

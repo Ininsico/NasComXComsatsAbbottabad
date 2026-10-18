@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "School management website for COMSATS Abbottabad — React (Vite) frontend and Express auth API.",
+  "description": "Nascom CRM — React (Vite) single-page app, Express API, and voice/embeddings service.",
   "scripts": {
     "install:all": "npm --prefix frontend install && npm --prefix backend install",
     "dev:frontend": "npm --prefix frontend run dev",

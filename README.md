@@ -1,4 +1,4 @@
-# COMSATS Abbottabad — Campus Management
+# Nascom CRM
 
 A campus management website for COMSATS Abbottabad, built as a submission for the NasCom Web Dev
 hackathon.
@@ -243,7 +243,7 @@ documents live in a genuinely separate vector space rather than being filtered a
 
 | Namespace       | Holds                             | Who can retrieve it |
 | --------------- | --------------------------------- | ------------------- |
-| `shared:campus` | programmes, faculty, policies      | everyone            |
+| `shared:product` | product help                   | everyone            |
 | `user:<id>`     | one member's own documents         | that member only    |
 | `wa:<number>`   | an unrecognised WhatsApp sender's  | that sender only    |
 
@@ -308,7 +308,7 @@ except Whisper and the LLM.
 | **VAD**  | Web Audio `AnalyserNode` in the browser, energy VAD in Python    | The browser learns the room noise for ~0.5 s, starts recording on speech and stops after 900 ms of silence. The server re-analyses the WAV, reports speech segments and trims silence before transcription. |
 | **STT**  | Groq `whisper-large-v3-turbo`                                    | 400–650 ms. A prompt biases the decoder toward campus vocabulary so "COMSATS" survives. |
 | **TTS**  | `edge-tts` (`en-US-AriaNeural`), Windows SAPI as fallback        | Edge voices need network; SAPI is offline. Groq's own TTS models are unusable on this key — one needs terms accepted, the other is decommissioned. |
-| **Reply**| The RAG pipeline + Groq                                          | Scoped to the member's own vector space plus `shared:campus`. |
+| **Reply**| The RAG pipeline + Groq                                          | Scoped to the member's own vector space plus `shared:product`. |
 
 The client downsamples to 16 kHz mono WAV, which both the Python VAD and Whisper read directly — no
 uploaded webm to decode.

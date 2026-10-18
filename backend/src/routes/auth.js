@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { config } from '../config.js';
 import { issueToken, requireAuth, verifyPassword } from '../lib/auth.js';
 import { redirectUri as calendarRedirectUri } from '../lib/calendar.js';
 import { ensureWorkspaceForUser } from '../lib/context.js';
@@ -42,6 +43,42 @@ router.get('/google-info', (req, res) => {
     message:
       'Both of these must be listed, character for character, under "Authorised redirect URIs" on the Google OAuth client.',
   });
+});
+
+/**
+ * Whether the sign-in page should offer the administrator button.
+ *
+ * Deliberately reports only that it is available and which account it signs into — never
+ * the password. Both routes answer 404 when INSTANT_LOGIN is off, so a normal deployment
+ * has no such endpoint at all.
+ */
+router.get('/instant-login', async (req, res) => {
+  if (!config.instantLogin.enabled) {
+    return res.status(404).json({ error: 'Instant login is not enabled on this deployment' });
+  }
+
+  const admin = await findUserByEmail(config.instantLogin.adminEmail);
+
+  if (!admin) {
+    return res.status(404).json({ error: 'The bootstrap administrator has not been created yet' });
+  }
+
+  return res.json({ available: true, email: admin.email, name: admin.name });
+});
+
+/** One click, no password. Only ever signs into the configured bootstrap administrator. */
+router.post('/instant-login', async (req, res) => {
+  if (!config.instantLogin.enabled) {
+    return res.status(404).json({ error: 'Instant login is not enabled on this deployment' });
+  }
+
+  const admin = await findUserByEmail(config.instantLogin.adminEmail);
+
+  if (!admin) {
+    return res.status(404).json({ error: 'The bootstrap administrator has not been created yet' });
+  }
+
+  return res.json({ token: issueToken(admin), user: toPublicUser(admin) });
 });
 
 /** Step one of the Google flow: send the browser to Google's consent screen. */

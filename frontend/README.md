@@ -1,4 +1,4 @@
-# Frontend — COMSATS Abbottabad
+# Frontend — Nascom CRM
 
 React 19 + Vite single-page app using React Router.
 

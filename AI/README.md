@@ -52,11 +52,11 @@ namespaces it names:
 
 | Namespace       | Holds                                    | Who sees it        |
 | --------------- | ---------------------------------------- | ------------------ |
-| `shared:campus` | published programmes, faculty, policies   | every member       |
+| `shared:product` | how the product behaves                  | every member       |
 | `user:<id>`     | one member's own documents                | that member only   |
 | `wa:<number>`   | an unrecognised WhatsApp sender's uploads | that sender only   |
 
-With Chroma each namespace is its own **collection** (`ns-shared-campus`,
+With Chroma each namespace is its own **collection** (`ns-shared-product`,
 `ns-user-<id>`), so isolation is enforced by the database rather than by
 filtering. A member's query can only reach their own collection plus the shared
 one, which is asserted in the pipeline test.

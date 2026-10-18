@@ -1,5 +1,5 @@
 """
-COMSATS Abbottabad — semantic embeddings and vector search service.
+Nascom CRM — semantic embeddings, retrieval and voice service.
 
 Run it with:
 
@@ -114,26 +114,34 @@ audio_queue = audio_queue_layer.AudioQueue(
 # Belt and braces: even with no broker, two turns still cannot run together.
 TURN_LOCK = threading.Lock()
 
+# The namespace the backend indexes product help into. Read from the environment so the two
+# services can never drift apart silently — a mismatch means the assistant answers from
+# nothing, which looks like a bad model rather than a wrong collection name.
+SHARED_NAMESPACE = os.getenv("SHARED_NAMESPACE", "shared:product")
+
 SYSTEM_PROMPT = (
-    "You are the friendly assistant for COMSATS Abbottabad, replying in a chat. "
+    "You are the assistant inside Nascom CRM, a multi-tenant CRM product, replying in a chat. "
     "Keep replies short: one to three sentences, or a short list. Plain text only.\n\n"
-    "Campus notes may be provided below. If they answer the question, answer from them and stay "
-    "faithful to them. If they are unrelated, ignore them completely. If the question is not about "
-    "the campus at all — general knowledge, arithmetic, definitions, small talk — answer it normally "
-    "and helpfully from your own knowledge.\n\n"
-    "Never reply that you cannot answer, and never tell someone to contact an office unless the "
-    "question is specifically about campus business and no note covers it. Even then, share what you "
-    "do know first."
+    "Product notes may be provided below. They describe how this system actually behaves:\n"
+    "- If they answer the question, answer from them, and name the page or setting involved "
+    "(for example Pipeline, Recovery queue, Integrations, Workspace settings, Subscription).\n"
+    "- If they do not cover the question, say what you do know from the notes and where in the app "
+    "the person can check, rather than inventing behaviour. Never claim a feature exists unless the "
+    "notes say so.\n"
+    "- If the question is not about this product at all — general knowledge, arithmetic, definitions, "
+    "small talk — answer it normally and helpfully from your own knowledge.\n\n"
+    "Never refuse a question. If something genuinely is not built yet, say that plainly and suggest "
+    "the closest thing that does exist."
 )
 
 # Spoken replies are read aloud, so they must be short and free of markup.
 VOICE_SYSTEM_PROMPT = (
-    "You are the voice assistant for COMSATS Abbottabad. Your reply will be spoken aloud by a "
+    "You are the voice assistant inside Nascom CRM. Your reply will be spoken aloud by a "
     "text-to-speech engine, so write one or two plain sentences — no lists, no markdown, no "
     "headings, no emoji, no URLs.\n\n"
-    "If the campus notes answer the question, answer from them. If they are unrelated, ignore them. "
-    "For anything that is not campus business, answer normally from your own knowledge. Never say "
-    "you cannot answer."
+    "Answer from the product notes when they cover the question, naming the screen the person "
+    "should open. When they do not, say what you know and where to look. For anything that is not "
+    "about this product, answer normally from your own knowledge. Never say you cannot answer."
 )
 
 app = Flask(__name__)
@@ -373,9 +381,9 @@ def groq_answer(question: str, context: str, system: str | None = None) -> dict:
             "messages": [
                 {
                     "role": "system",
-                    "content": f"{system or SYSTEM_PROMPT}\n\nCampus notes (possibly relevant — ignore them if they are not):\n{context}"
+                    "content": f"{system or SYSTEM_PROMPT}\n\nProduct notes (possibly relevant — ignore them if they are not):\n{context}"
                     if context
-                    else f"{system or SYSTEM_PROMPT}\n\nNo campus notes matched this question, so answer it from your own knowledge.",
+                    else f"{system or SYSTEM_PROMPT}\n\nNo product notes matched this question, so answer it from your own knowledge.",
                 },
                 {"role": "user", "content": question},
             ],
@@ -389,7 +397,7 @@ def groq_answer(question: str, context: str, system: str | None = None) -> dict:
             "Content-Type": "application/json",
             "Authorization": f"Bearer {GROQ_API_KEY}",
             # Cloudflare 1010 blocks urllib's default User-Agent.
-            "User-Agent": "comsats-ai/1.0 (+local)",
+            "User-Agent": "nascom-ai/1.0 (+local)",
         },
         method="POST",
     )
@@ -563,8 +571,8 @@ def _voice_namespaces() -> list[str]:
         if personal not in items:
             items.insert(0, personal)
 
-    if "shared:campus" not in items:
-        items.append("shared:campus")
+    if SHARED_NAMESPACE not in items:
+        items.append(SHARED_NAMESPACE)
 
     return items
 
@@ -753,7 +761,7 @@ def queued_voice_job(job: dict) -> tuple[dict, int]:
     except Exception as exc:
         return {"error": f"the queued audio could not be decoded: {exc}"}, 400
 
-    namespaces = job.get("namespaces") or ["shared:campus"]
+    namespaces = job.get("namespaces") or [SHARED_NAMESPACE]
 
     return run_voice_turn(raw, job.get("user_id") or "", namespaces)
 
@@ -942,7 +950,7 @@ def safe_amqp_url(url: str) -> str:
 
 def banner(started_chroma: bool, embedder_ready: bool, queue_started: bool) -> None:
     print("=" * 72)
-    print("  COMSATS Abbottabad — AI service (embeddings + vectors + voice)")
+    print("  Nascom CRM — AI service (embeddings + vectors + voice)")
     print("=" * 72)
 
     if embedder_ready:

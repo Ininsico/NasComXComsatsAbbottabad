@@ -1,4 +1,4 @@
-# COMSATS Abbottabad — full stack.
+# Nascom CRM — full stack.
 #
 #   frontend (nginx + SPA)  â”€â”€â–¶  backend (Express)  â”€â”€â–¶  ai (Flask: embeddings, voice)
 #            â”‚                          â”‚                        â”‚
@@ -219,6 +219,11 @@ services:
       GROQ_API_KEY: ${GROQ_API_KEY:?set GROQ_API_KEY in deploy/.env}
       GROQ_MODEL: ${GROQ_MODEL:-openai/gpt-oss-20b}
 
+      # The namespace the API indexes product help into. Named here so the two services
+      # cannot drift apart: a mismatch means the assistant retrieves nothing and looks
+      # like a broken model.
+      SHARED_NAMESPACE: ${SHARED_NAMESPACE:-shared:product}
+
       # The audio queue. A single consumer with prefetch_count=1 is what makes
       # "one recording at a time" true.
       RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672/${RABBITMQ_VHOST:-comsats}
@@ -276,6 +281,14 @@ services:
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       GOOGLE_IDENTITY_REDIRECT_URI: ${GOOGLE_IDENTITY_REDIRECT_URI:-}
+
+      # The administrator button on the sign-in page. Off unless INSTANT_LOGIN is true: it
+      # issues a session without a password, so it has to be a deliberate choice. When it is
+      # on, the account below is created once, made an administrator, and given a workspace.
+      INSTANT_LOGIN: ${INSTANT_LOGIN:-false}
+      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
+      BOOTSTRAP_ADMIN_NAME: ${BOOTSTRAP_ADMIN_NAME:-Administrator}
 
       CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME}
       CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY}

@@ -1,4 +1,5 @@
 import { createApp } from './app.js';
+import { ensureBootstrapAdmin } from './lib/bootstrapAdmin.js';
 import { config } from './config.js';
 import { redirectUri as calendarRedirectUri } from './lib/calendar.js';
 import { startEscalationTicker } from './lib/escalation.js';
@@ -34,6 +35,17 @@ try {
   console.log(`RAG: indexed ${knowledge.chunks} chunk(s) into ${knowledge.namespace}`);
 } catch (error) {
   console.error(`RAG seeding failed: ${error.message}`);
+}
+
+// The administrator behind the instant-login button. Only acts when explicitly enabled.
+try {
+  const bootstrap = await ensureBootstrapAdmin();
+
+  if (bootstrap) {
+    console.log(`Instant login: on, signing in as ${bootstrap.user.email}`);
+  }
+} catch (error) {
+  console.error(`[instant-login] could not prepare the administrator: ${error.message}`);
 }
 
 // Printed on every boot because a redirect_uri_mismatch is fixed by copying these two
