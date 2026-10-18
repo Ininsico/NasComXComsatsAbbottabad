@@ -76,7 +76,7 @@ console.log('  Both must be listed under "Authorised redirect URIs" on that OAut
 
 const app = createApp();
 
-app.listen(config.port, () => {
+app.listen(config.port, async () => {
   console.log(`Nascom CRM API listening on http://localhost:${config.port} (${config.env})`);
   startPaymentWatcher();
 
