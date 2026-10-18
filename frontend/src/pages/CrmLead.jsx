@@ -124,7 +124,7 @@ export default function CrmLead() {
     );
   }
 
-  if (!lead) return <p className="hint">Loading leadâ€¦</p>;
+  if (!lead) return <p className="hint">Loading lead…</p>;
 
   const permissions = meta?.member?.permissions ?? [];
   const canEdit = permissions.includes('crm.edit');
@@ -145,7 +145,7 @@ export default function CrmLead() {
         <div>
           <h1>{lead.name}</h1>
           <p>
-            {lead.source} Â· {lead.assigneeName ?? 'Unassigned'} Â· created{' '}
+            {lead.source} · {lead.assigneeName ?? 'Unassigned'} · created{' '}
             {new Date(lead.createdAt).toLocaleString()}
           </p>
         </div>
@@ -187,7 +187,7 @@ export default function CrmLead() {
           <Clock size={13} aria-hidden="true" />
         )}
         {clock.label}
-        {lead.escalationLevel > 0 ? ` Â· escalated ${lead.escalationLevel}Ã—` : ''}
+        {lead.escalationLevel > 0 ? ` · escalated ${lead.escalationLevel}×` : ''}
       </span>
 
       <section className="split" style={{ alignItems: 'start' }}>
@@ -346,7 +346,7 @@ export default function CrmLead() {
           {(lead.activities ?? []).map((entry) => (
             <li className="voice-turn" key={entry.id}>
               <span className="label-micro">
-                {entry.kind} Â· {entry.by || 'system'} Â· {new Date(entry.at).toLocaleString()}
+                {entry.kind} · {entry.by || 'system'} · {new Date(entry.at).toLocaleString()}
               </span>
               <p>{entry.summary}</p>
             </li>

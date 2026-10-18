@@ -36,6 +36,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Cheapest and earliest gate: a file saved with the wrong code page shows up on the
+      # live site as random symbols, and is otherwise invisible in review.
+      - name: Check for mangled text encoding
+        run: node deploy/scripts/check-encoding.mjs .
+
       - name: Check the production configuration
         run: |
           set -euo pipefail

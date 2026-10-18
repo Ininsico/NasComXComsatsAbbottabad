@@ -79,7 +79,7 @@ export default function WorkspaceSettings() {
     }
   }
 
-  if (!settings) return <p className="hint">Loading settingsâ€¦</p>;
+  if (!settings) return <p className="hint">Loading settings…</p>;
 
   const ladder = settings.escalation ?? [];
 
@@ -88,7 +88,7 @@ export default function WorkspaceSettings() {
       <div className="dash-head">
         <div>
           <h1>Workspace settings</h1>
-          <p>{workspace?.name} Â· the timers here are what the server enforces</p>
+          <p>{workspace?.name} · the timers here are what the server enforces</p>
         </div>
       </div>
 

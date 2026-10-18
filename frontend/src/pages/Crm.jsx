@@ -142,7 +142,7 @@ export default function Crm() {
         <div>
           <h1>Pipeline</h1>
           <p>
-            {meta?.workspace?.name ?? 'Workspace'} Â· {leads.length} leads Â· acknowledgements enforced
+            {meta?.workspace?.name ?? 'Workspace'} · {leads.length} leads · acknowledgements enforced
           </p>
         </div>
 
@@ -260,7 +260,7 @@ export default function Crm() {
 
             <div className="btn-row">
               <button type="submit" className="btn btn-primary" disabled={busy}>
-                {busy ? 'Creatingâ€¦' : 'Create and assign'}
+                {busy ? 'Creating…' : 'Create and assign'}
               </button>
               <button type="button" className="btn btn-secondary" onClick={() => setShowForm(false)}>
                 Cancel
@@ -306,7 +306,7 @@ export default function Crm() {
                     </div>
 
                     <span className="lead-card__meta">
-                      {lead.assigneeName ?? 'Unassigned'} Â· {lead.source}
+                      {lead.assigneeName ?? 'Unassigned'} · {lead.source}
                     </span>
 
                     <span className={`countdown countdown--${clock.tone}`}>
@@ -321,7 +321,7 @@ export default function Crm() {
                     </span>
 
                     {lead.escalationLevel > 0 ? (
-                      <span className="pill pill--problem">Escalated Ã—{lead.escalationLevel}</span>
+                      <span className="pill pill--problem">Escalated ×{lead.escalationLevel}</span>
                     ) : null}
                   </Link>
                 );
@@ -332,7 +332,7 @@ export default function Crm() {
       </div>
 
       <p className="hint" style={{ marginTop: '1rem' }}>
-        Refreshes every {REFRESH_MS / 1000}s. An unacknowledged lead escalates on its own â€” the clock
+        Refreshes every {REFRESH_MS / 1000}s. An unacknowledged lead escalates on its own — the clock
         here is the real deadline the server enforces.
       </p>
     </>

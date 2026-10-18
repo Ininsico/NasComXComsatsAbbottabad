@@ -14,7 +14,7 @@ import calendarRoutes from './routes/calendar.js';
 import crmRoutes from './routes/crm.js';
 import deployRoutes from './routes/deploy.js';
 import documentRoutes from './routes/documents.js';
-import paymentRoutes from './routes/payments.js';
+import paymentRoutes, { stripeWebhookHandler } from './routes/payments.js';
 import profileRoutes from './routes/profile.js';
 import whatsappRoutes from './routes/whatsapp.js';
 import workspaceRoutes from './routes/workspace.js';
@@ -33,6 +33,14 @@ export function createApp() {
       },
     }),
   );
+  // Stripe signs the exact bytes it sends, so this one route keeps the raw body. It has
+  // to be mounted before express.json() replaces the body with a parsed object.
+  app.post(
+    '/api/payments/stripe/webhook',
+    express.raw({ type: 'application/json', limit: '256kb' }),
+    stripeWebhookHandler,
+  );
+
   app.use(express.json({ limit: '100kb' }));
 
   // Counts and times every request. Prometheus scrapes /metrics below.

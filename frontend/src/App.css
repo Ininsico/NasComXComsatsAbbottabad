@@ -1893,6 +1893,62 @@
   }
 }
 
+/* Payment provider picker ---------------------------------------------- */
+
+.provider-pick {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+}
+
+.provider-pick > .label-micro {
+  align-self: center;
+  margin-right: 0.25rem;
+}
+
+.provider-pick__option {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  max-width: 340px;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: var(--r-xl, 0.75rem);
+  background: var(--surface);
+  color: var(--slate-600);
+  text-align: left;
+  cursor: pointer;
+  transition: all 200ms ease;
+}
+
+.provider-pick__option strong {
+  display: block;
+  font-size: 0.875rem;
+  color: var(--slate-900, #0f172a);
+}
+
+.provider-pick__option em {
+  display: block;
+  font-style: normal;
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+.provider-pick__option:hover {
+  border-color: var(--blue-300, #93c5fd);
+}
+
+.provider-pick__option.is-active {
+  border-color: var(--blue-600, #2563eb);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+}
+
+.provider-pick__option.is-active strong {
+  color: var(--blue-700, #1d4ed8);
+}
+
 /* CRM pipeline board --------------------------------------------------- */
 
 .board {

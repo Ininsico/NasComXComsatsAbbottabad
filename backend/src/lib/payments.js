@@ -54,15 +54,17 @@ export async function findIntent(id) {
   return intents.find((intent) => intent.id === id) ?? null;
 }
 
-export async function createIntent({ user, plan, asset, network, address }) {
+export async function createIntent({ user, plan, provider = 'crypto', asset, network, address }) {
   return withLock(async () => {
     const intents = await readAll();
     const tolerancePercent = config.payments.tolerancePercent;
     const createdAt = new Date();
+    const card = provider === 'stripe';
 
     const intent = {
       id: randomUUID(),
       reference: `CMX-${createdAt.getTime().toString(36).toUpperCase()}-${randomUUID().slice(0, 4).toUpperCase()}`,
+      provider,
       userId: user.id,
       userName: user.name,
       userEmail: user.email,
@@ -72,13 +74,19 @@ export async function createIntent({ user, plan, asset, network, address }) {
       planPeriod: plan.period,
       expectedAmount: plan.amountUsdt,
       tolerancePercent,
-      minAmount: round(plan.amountUsdt * (1 - tolerancePercent / 100), 2),
-      maxAmount: round(plan.amountUsdt * (1 + tolerancePercent / 100), 2),
-      asset,
+      // A card is charged the exact amount, so the band only means anything for crypto.
+      minAmount: card ? plan.amountUsdt : round(plan.amountUsdt * (1 - tolerancePercent / 100), 2),
+      maxAmount: card ? plan.amountUsdt : round(plan.amountUsdt * (1 + tolerancePercent / 100), 2),
+      asset: card ? String(asset ?? 'USD').toUpperCase() : asset,
       network,
       address,
+      checkoutSessionId: null,
+      checkoutUrl: null,
+      paymentReference: null,
       status: 'awaiting_payment',
-      statusMessage: 'Send the exact amount to the address below. This page checks for it automatically.',
+      statusMessage: card
+        ? 'Complete the card payment on Stripe. This page confirms itself when Stripe reports the session as paid.'
+        : 'Send the exact amount to the address below. This page checks for it automatically.',
       matchedTotal: 0,
       consumedTxIds: [],
       attemptCount: 0,
@@ -89,6 +97,57 @@ export async function createIntent({ user, plan, asset, network, address }) {
     };
 
     intents.push(intent);
+    await writeAll(intents);
+    return intent;
+  });
+}
+
+/** Attach the Stripe checkout session to an intent once it has been created. */
+export async function setIntentCheckout(id, { sessionId, url }) {
+  return withLock(async () => {
+    const intents = await readAll();
+    const intent = intents.find((entry) => entry.id === id);
+
+    if (!intent) return null;
+
+    intent.checkoutSessionId = sessionId;
+    intent.checkoutUrl = url;
+
+    await writeAll(intents);
+    return intent;
+  });
+}
+
+/**
+ * Settle an intent from a trusted source — a verified Stripe webhook or a session read
+ * back from Stripe's API. Idempotent: a second call for an already-confirmed intent
+ * changes nothing, so a retried webhook cannot double-count.
+ */
+export async function markIntentPaid({ id, reference, amount, note }) {
+  return withLock(async () => {
+    const intents = await readAll();
+    const intent = intents.find((entry) => entry.id === id);
+
+    if (!intent) return null;
+    if (intent.status === 'confirmed' || intent.status === 'overpaid') return intent;
+
+    const paid = amount ?? intent.expectedAmount;
+    const settledAt = new Date().toISOString();
+
+    intent.status = 'confirmed';
+    intent.matchedTotal = round(paid);
+    intent.confirmedAt = settledAt;
+    intent.checkedAt = settledAt;
+    intent.attemptCount = (intent.attemptCount ?? 0) + 1;
+    intent.paymentReference = reference ?? intent.paymentReference;
+    intent.statusMessage =
+      note ??
+      `Payment of ${round(paid)} ${intent.asset} confirmed. Your ${intent.planName} subscription is active.`;
+
+    if (reference && !intent.consumedTxIds.includes(reference)) {
+      intent.consumedTxIds = [...intent.consumedTxIds, reference];
+    }
+
     await writeAll(intents);
     return intent;
   });

@@ -117,7 +117,7 @@ export default function Integrations() {
           <h3 style={{ marginTop: '0.25rem' }}>Appointment booking</h3>
 
           {!calendar ? (
-            <p className="hint">Checkingâ€¦</p>
+            <p className="hint">Checking…</p>
           ) : calendar.connected ? (
             <p className="alert alert--success">
               <CircleCheckBig size={15} aria-hidden="true" />
@@ -169,7 +169,7 @@ export default function Integrations() {
               <ul className="stack" style={{ paddingLeft: '1.1rem', marginBottom: 0 }}>
                 {calendar.history.slice(0, 5).map((entry) => (
                   <li key={`${entry.at}-${entry.eventId}`} className="hint">
-                    {entry.action} Â· {new Date(entry.at).toLocaleString()}
+                    {entry.action} · {new Date(entry.at).toLocaleString()}
                   </li>
                 ))}
               </ul>
@@ -184,7 +184,7 @@ export default function Integrations() {
           <h3 style={{ marginTop: '0.25rem' }}>Where escalations go</h3>
           <p className="muted" style={{ fontSize: '0.8125rem' }}>
             A generic webhook, Slack, or Telegram. With none configured the attempt is still recorded,
-            as â€œskippedâ€.
+            as “skipped”.
           </p>
 
           <form className="form" onSubmit={saveChannels}>
@@ -205,7 +205,7 @@ export default function Integrations() {
                 className="input"
                 value={channels.slackWebhookUrl}
                 onChange={(event) => setChannels({ ...channels, slackWebhookUrl: event.target.value })}
-                placeholder="https://hooks.slack.com/services/â€¦"
+                placeholder="https://hooks.slack.com/services/…"
               />
             </div>
             <div className="grid grid-2">
@@ -246,7 +246,7 @@ export default function Integrations() {
             {alerts.slice(0, 12).map((alert) => (
               <li className="voice-turn" key={alert.id}>
                 <span className="label-micro">
-                  {alert.channel} Â· {new Date(alert.at).toLocaleString()}
+                  {alert.channel} · {new Date(alert.at).toLocaleString()}
                 </span>
                 <p>
                   <span className={`pill ${alert.status === 'sent' ? 'pill--done' : alert.status === 'failed' ? 'pill--problem' : 'pill--neutral'}`}>

@@ -91,9 +91,10 @@ export const api = {
 
   paymentConfig: (token) => request('/api/payments/config', { token }),
   paymentPlans: (token) => request('/api/payments/plans', { token }),
+  paymentProviders: (token) => request('/api/payments/providers', { token }),
   paymentIntents: (token) => request('/api/payments/intents', { token }),
-  createPaymentIntent: (token, planId) =>
-    request('/api/payments/intents', { method: 'POST', body: { planId }, token }),
+  createPaymentIntent: (token, planId, provider = 'crypto') =>
+    request('/api/payments/intents', { method: 'POST', body: { planId, provider }, token }),
   checkPaymentIntent: (token, id) =>
     request(`/api/payments/intents/${id}/check`, { method: 'POST', token }),
   wallet: (token) => request('/api/payments/wallet', { token }),

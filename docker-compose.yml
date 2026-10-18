@@ -1,9 +1,9 @@
 # COMSATS Abbottabad — full stack.
 #
-#   frontend (nginx + SPA)  ──▶  backend (Express)  ──▶  ai (Flask: embeddings, voice)
-#            │                          │                        │
-#            └── TLS is terminated by the host nginx, which      ├──▶ chroma (vector db)
-#                forwards the domain to 127.0.0.1:8085           └──▶ rabbitmq (audio queue)
+#   frontend (nginx + SPA)  â”€â”€â–¶  backend (Express)  â”€â”€â–¶  ai (Flask: embeddings, voice)
+#            â”‚                          â”‚                        â”‚
+#            â””â”€â”€ TLS is terminated by the host nginx, which      â”œâ”€â”€â–¶ chroma (vector db)
+#                forwards the domain to 127.0.0.1:8085           â””â”€â”€â–¶ rabbitmq (audio queue)
 #
 # Only the frontend publishes a host port, and only on loopback. The broker, the
 # vector database and the API are reachable inside the compose network alone.
@@ -173,7 +173,7 @@ services:
     build:
       context: .
       dockerfile: deploy/docker/chroma.Dockerfile
-    image: ${REGISTRY}/nascon-chroma:${IMAGE_TAG}
+    image: ${REGISTRY}/nascon-chroma:${IMAGE_TAG:?IMAGE_TAG must be the commit sha — the deploy workflow exports it; never run compose bare}
     restart: unless-stopped
     <<: *default-logging
     environment:
@@ -200,7 +200,7 @@ services:
     build:
       context: .
       dockerfile: deploy/docker/ai.Dockerfile
-    image: ${REGISTRY}/nascon-ai:${IMAGE_TAG}
+    image: ${REGISTRY}/nascon-ai:${IMAGE_TAG:?IMAGE_TAG must be the commit sha — the deploy workflow exports it; never run compose bare}
     restart: unless-stopped
     <<: *default-logging
     environment:
@@ -254,7 +254,7 @@ services:
     build:
       context: .
       dockerfile: deploy/docker/backend.Dockerfile
-    image: ${REGISTRY}/nascon-backend:${IMAGE_TAG}
+    image: ${REGISTRY}/nascon-backend:${IMAGE_TAG:?IMAGE_TAG must be the commit sha — the deploy workflow exports it; never run compose bare}
     restart: unless-stopped
     <<: *default-logging
     environment:
@@ -308,6 +308,13 @@ services:
       BINANCE_DEPOSIT_NETWORK: ${BINANCE_DEPOSIT_NETWORK:-TRX}
       PAYMENT_TOLERANCE_PERCENT: ${PAYMENT_TOLERANCE_PERCENT:-10}
       PAYMENT_POLL_SECONDS: ${PAYMENT_POLL_SECONDS:-30}
+
+      # Card payments. The secret key alone is enough to take a payment; the webhook
+      # secret is only needed for Stripe to push the confirmation instead of the browser
+      # asking. Leaving it empty is safe: the webhook route then refuses every call.
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      STRIPE_CURRENCY: ${STRIPE_CURRENCY:-usd}
     volumes:
       - backend-data:/app/data
     depends_on:
@@ -332,7 +339,7 @@ services:
       args:
         VITE_API_URL: ""
         VITE_VOICE_URL: ""
-    image: ${REGISTRY}/nascon-frontend:${IMAGE_TAG}
+    image: ${REGISTRY}/nascon-frontend:${IMAGE_TAG:?IMAGE_TAG must be the commit sha — the deploy workflow exports it; never run compose bare}
     restart: unless-stopped
     <<: *default-logging
     ports:

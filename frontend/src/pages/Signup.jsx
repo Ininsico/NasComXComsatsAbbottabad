@@ -168,7 +168,7 @@ export default function Signup() {
           </div>
 
           <button type="submit" className="btn btn-primary btn-block" disabled={submitting}>
-            {submitting ? 'Creating accountÃ¢â‚¬Â¦' : 'Create account'}
+            {submitting ? 'Creating account…' : 'Create account'}
           </button>
         </form>
       </div>

@@ -68,6 +68,11 @@ export const config = {
     tolerancePercent: Number(process.env.PAYMENT_TOLERANCE_PERCENT ?? 10),
     pollSeconds: Number(process.env.PAYMENT_POLL_SECONDS ?? 30),
   },
+  stripe: {
+    secretKey: process.env.STRIPE_SECRET_KEY ?? '',
+    webhookSecret: process.env.STRIPE_WEBHOOK_SECRET ?? '',
+    currency: (process.env.STRIPE_CURRENCY ?? 'usd').toLowerCase(),
+  },
   rag: {
     topK: toInt(process.env.RAG_TOP_K, 4),
     minScore: toFloat(process.env.RAG_MIN_SCORE, 0.05),
@@ -94,6 +99,9 @@ config.groq.configured = Boolean(config.groq.apiKey);
 
 /** Binance is used read-only, so both halves of the key pair are required. */
 config.binance.configured = Boolean(config.binance.apiKey && config.binance.apiSecret);
+
+/** With only the secret key Stripe can still take a payment; the webhook is optional. */
+config.stripe.configured = Boolean(config.stripe.secretKey);
 
 if (config.env === 'production' && !process.env.JWT_SECRET) {
   throw new Error('JWT_SECRET must be set when NODE_ENV=production');
