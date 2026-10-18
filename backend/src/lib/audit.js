@@ -44,10 +44,16 @@ export async function record({ workspaceId, actorId = null, action, target = nul
   });
 }
 
-/** Newest first — the order the console renders. */
-export async function listEntries(workspaceId) {
-  const rows = await entries.where((row) => row.workspaceId === workspaceId);
-  return rows.sort((a, b) => (a.at < b.at ? 1 : -1));
+/** Newest first, optionally filtered — the order the console renders. */
+export async function listEntries(workspaceId, { action, actorId, from, to, limit = 200 } = {}) {
+  let rows = await entries.where((row) => row.workspaceId === workspaceId);
+
+  if (action) rows = rows.filter((row) => row.action === action);
+  if (actorId) rows = rows.filter((row) => row.actorId === actorId);
+  if (from) rows = rows.filter((row) => row.at >= from);
+  if (to) rows = rows.filter((row) => row.at <= to);
+
+  return rows.sort((a, b) => (a.at < b.at ? 1 : -1)).slice(0, Math.min(Number(limit) || 200, 1000));
 }
 
 /** Recompute the chain and report the first entry that does not match. */

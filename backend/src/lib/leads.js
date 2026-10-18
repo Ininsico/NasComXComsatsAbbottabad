@@ -10,43 +10,56 @@ import { getSettings } from './settings.js';
 const leads = db.collection('leads');
 const activities = db.collection('activities');
 
-export const STAGES = ['new', 'contacted', 'qualified', 'proposal', 'won', 'lost'];
-
-export const STAGE_LABELS = {
-  new: 'New',
-  contacted: 'Contacted',
-  qualified: 'Qualified',
-  proposal: 'Proposal',
-  won: 'Won',
-  lost: 'Lost',
-};
-
 export const SOURCES = ['website', 'whatsapp', 'sms', 'walk-in', 'phone', 'referral', 'event', 'manual'];
 
 export const ACTIVITY_KINDS = ['call', 'email', 'meeting', 'note', 'whatsapp', 'sms', 'system'];
 
-const CLOSED = new Set(['won', 'lost']);
-
 const text = (value, limit = 200) => String(value ?? '').trim().slice(0, limit);
 const nowIso = () => new Date().toISOString();
 
-export function isOpen(lead) {
-  return !CLOSED.has(lead.stage);
+/**
+ * Stages are workspace configuration, not code. The key set lives in settings.pipeline;
+ * these helpers read it so an Admin can add, rename, reorder and close stages without a
+ * deploy. `won` is a flag on the stage, which is what conversion and revenue count.
+ */
+export function stageKeys(settings) {
+  return (settings?.pipeline ?? []).map((stage) => stage.key);
+}
+
+export function closedKeys(settings) {
+  return new Set((settings?.pipeline ?? []).filter((stage) => stage.isClosed).map((stage) => stage.key));
+}
+
+export function stageLabelsFrom(settingsPipeline) {
+  return Object.fromEntries(
+    (settingsPipeline ?? []).map((stage) => [stage.key, stage.label]),
+  );
+}
+
+export function isWonStage(settings, key) {
+  const stage = (settings?.pipeline ?? []).find((entry) => entry.key === key);
+
+  return Boolean(stage?.isClosed && stage?.isWon);
+}
+
+export function isOpen(lead, settings) {
+  return !closedKeys(settings).has(lead.stage);
 }
 
 /** Open leads per assignee, which is what the max-open limit is checked against. */
-export function openCounts(rows) {
+export function openCounts(rows, settings) {
+  const closed = closedKeys(settings);
   const counts = {};
 
   for (const lead of rows) {
-    if (!lead.assigneeId || !isOpen(lead)) continue;
+    if (!lead.assigneeId || closed.has(lead.stage)) continue;
     counts[lead.assigneeId] = (counts[lead.assigneeId] ?? 0) + 1;
   }
 
   return counts;
 }
 
-export function validateLead(input, { partial = false } = {}) {
+export function validateLead(input, { partial = false, stages = null } = {}) {
   const errors = {};
   const lead = {};
 
@@ -81,10 +94,15 @@ export function validateLead(input, { partial = false } = {}) {
   if (input?.company !== undefined) lead.company = text(input.company, 120);
 
   if (input?.stage !== undefined) {
-    const stage = text(input.stage, 20).toLowerCase();
+    const stage = text(input.stage, 60).toLowerCase();
 
-    if (!STAGES.includes(stage)) errors.stage = `Stage must be one of: ${STAGES.join(', ')}`;
-    else lead.stage = stage;
+    // The key set is the workspace's pipeline config; without it (should not happen) fall
+    // back to accepting the value rather than blocking every save.
+    if (stages && !stages.includes(stage)) {
+      errors.stage = `Stage must be one of: ${stages.join(', ')}`;
+    } else {
+      lead.stage = stage;
+    }
   }
 
   if (input?.value !== undefined) {
@@ -165,6 +183,32 @@ export async function findLead(id, workspaceId) {
   return { ...hydratedLead, activities };
 }
 
+/**
+ * The spec's promise: stage changes are blocked with a clear message until the required
+ * fields are set. Where the fields come from is config — this is the required-fields gate
+ * the editor feeds.
+ */
+export async function ensureStageRequirements(settings, stageKey, merged) {
+  const stage = (settings?.pipeline ?? []).find((entry) => entry.key === stageKey);
+  const missing = (stage?.required ?? []).filter((field) => {
+    const value = merged[field];
+
+    return value === undefined || value === null || value === '';
+  });
+
+  if (missing.length > 0) {
+    return {
+      errors: {
+        stage: `This stage needs: ${missing
+          .map((field) => (field === 'value' ? 'an opportunity value' : field))
+          .join(', ')}`,
+      },
+    };
+  }
+
+  return null;
+}
+
 function secondsOverdue(lead) {
   if (!lead.ackDeadline || lead.acknowledgedAt) return 0;
 
@@ -208,14 +252,27 @@ async function hydrate(workspaceId, rows) {
  * someone about it. Every side effect is recorded.
  */
 export async function createLead({ workspaceId, input, actorId = null, actorName = 'system' }) {
-  const { lead, errors } = validateLead(input);
+  const settings = await getSettings(workspaceId);
+  const { lead, errors } = validateLead(input, { stages: stageKeys(settings) });
 
   if (errors) return { errors };
 
-  const settings = await getSettings(workspaceId);
+  // Custom fields validate against the workspace's definitions, server-side — a type or a
+  // dropdown set on the field is enforced here, not in the browser.
+  const customFields = validateCustomFields(settings.customFields ?? [], input.fields ?? {}, {});
+  const customErrors = Object.fromEntries(
+    Object.entries(customFields.errors).map(([key, message]) => [`fields.${key}`, message]),
+  );
+
+  if (Object.keys(customErrors).length > 0) {
+    return { errors: { ...errors, ...customErrors } };
+  }
+
+  lead.stage = lead.stage ?? settings.pipeline[0]?.key ?? 'new';
+  lead.fields = { ...(lead.fields ?? {}), ...customFields.values };
   const members = await listMembers(workspaceId);
   const existing = await leads.where((row) => row.workspaceId === workspaceId);
-  const counts = openCounts(existing);
+  const counts = openCounts(existing, settings);
 
   const assignee = pickRoundRobin(members, counts, settings);
 
@@ -391,7 +448,7 @@ export async function escalateDue({ now = Date.now(), workspaceId = null } = {})
     const settings = await getSettings(id);
     const members = await listMembers(id);
     const rows = await leads.where((lead) => lead.workspaceId === id);
-    const counts = openCounts(rows);
+    const counts = openCounts(rows, settings);
 
     for (const lead of rows) {
       const due = dueSteps({ lead, settings, now });
@@ -490,7 +547,10 @@ export async function escalateDue({ now = Date.now(), workspaceId = null } = {})
 
 export async function updateLead({ workspaceId, id, patch, actorId = null, actorName = 'system' }) {
   const settings = await getSettings(workspaceId);
-  const { lead: changes, errors } = validateLead(patch, { partial: true });
+  const { lead: changes, errors } = validateLead(patch, {
+    partial: true,
+    stages: stageKeys(settings),
+  });
 
   if (errors) return { errors };
 
@@ -498,24 +558,29 @@ export async function updateLead({ workspaceId, id, patch, actorId = null, actor
 
   if (!existing) return { missing: true };
 
-  if (changes.stage) {
-    const stage = settings.pipeline.find((entry) => entry.key === changes.stage);
-    const merged = { ...existing, ...changes };
-    const missing = (stage?.required ?? []).filter((field) => {
-      const value = merged[field];
+  // Custom fields are validated on every write, against the workspace's definitions.
+  if (patch?.fields !== undefined) {
+    const custom = validateCustomFields(
+      settings.customFields ?? [],
+      patch.fields ?? {},
+      existing.fields ?? {},
+    );
 
-      return value === undefined || value === null || value === '';
-    });
-
-    if (missing.length > 0) {
+    if (Object.keys(custom.errors).length > 0) {
       return {
-        errors: {
-          stage: `This stage needs: ${missing
-            .map((field) => (field === 'value' ? 'an opportunity value' : field))
-            .join(', ')}`,
-        },
+        errors: Object.fromEntries(
+          Object.entries(custom.errors).map(([key, message]) => [`fields.${key}`, message]),
+        ),
       };
     }
+
+    changes.fields = { ...(existing.fields ?? {}), ...custom.values };
+  }
+
+  if (changes.stage) {
+    const blocked = await ensureStageRequirements(settings, changes.stage, { ...existing, ...changes });
+
+    if (blocked) return blocked;
   }
 
   let updated = null;
@@ -527,7 +592,7 @@ export async function updateLead({ workspaceId, id, patch, actorId = null, actor
 
     Object.assign(row, changes, { updatedAt: nowIso() });
 
-    if (CLOSED.has(changes.stage)) {
+    if ((settings.pipeline ?? []).find((stage) => stage.key === changes.stage)?.isClosed) {
       // A closed stage stops the clock: nobody owes a first reply on a finished deal.
       row.ackDeadline = null;
     }
@@ -540,7 +605,7 @@ export async function updateLead({ workspaceId, id, patch, actorId = null, actor
       workspaceId,
       leadId: id,
       kind: 'system',
-      summary: `Stage ${STAGE_LABELS[existing.stage] ?? existing.stage} → ${STAGE_LABELS[changes.stage] ?? changes.stage}`,
+      summary: `Stage ${stageLabelsFrom(settings.pipeline)[existing.stage] ?? existing.stage} → ${stageLabelsFrom(settings.pipeline)[changes.stage] ?? changes.stage}`,
       by: actorName,
     });
 
@@ -784,14 +849,79 @@ export async function addActivity({ workspaceId, leadId, kind, summary, by = 'sy
   return created;
 }
 
+export function validateCustomFields(definitions, input = {}, existing = {}) {
+  const errors = {};
+  const values = {};
+
+  for (const field of definitions ?? []) {
+    const raw = input[field.key];
+    const prior = existing?.[field.key];
+
+    // A patch that does not mention the field keeps whatever is stored.
+    if (raw === undefined && prior !== undefined) {
+      values[field.key] = prior;
+      continue;
+    }
+
+    const value = raw === undefined || raw === null ? '' : raw;
+
+    if (field.type === 'checkbox') {
+      values[field.key] = Boolean(value);
+      continue;
+    }
+
+    const stringValue = String(value).trim();
+
+    if (!stringValue) {
+      if (field.required) errors[field.key] = `${field.label} is required`;
+      else values[field.key] = '';
+      continue;
+    }
+
+    if (field.type === 'number') {
+      const number = Number(stringValue);
+
+      if (!Number.isFinite(number)) errors[field.key] = `${field.label} must be a number`;
+      else values[field.key] = number;
+      continue;
+    }
+
+    if (field.type === 'date') {
+      const parsed = Date.parse(stringValue);
+
+      if (Number.isNaN(parsed)) errors[field.key] = `${field.label} must be a date`;
+      else values[field.key] = new Date(parsed).toISOString().slice(0, 10);
+      continue;
+    }
+
+    if (field.type === 'dropdown') {
+      if (!(field.options ?? []).includes(stringValue)) {
+        errors[field.key] = `${field.label} must be one of: ${(field.options ?? []).join(', ')}`;
+      } else {
+        values[field.key] = stringValue;
+      }
+      continue;
+    }
+
+    values[field.key] = stringValue.slice(0, 500);
+  }
+
+  return { errors, values };
+}
+
 export async function leadStats(workspaceId) {
+  const settings = await getSettings(workspaceId);
   const rows = await leads.where((lead) => lead.workspaceId === workspaceId);
   const members = await listMembers(workspaceId);
   const now = Date.now();
   const weekAgo = new Date(now - 7 * 24 * 3600 * 1000).toISOString();
   const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
+  const closed = closedKeys(settings);
+  const wonStages = new Set(
+    (settings.pipeline ?? []).filter((stage) => stage.isClosed && stage.isWon).map((stage) => stage.key),
+  );
 
-  const byStage = Object.fromEntries(STAGES.map((stage) => [stage, 0]));
+  const byStage = Object.fromEntries(stageKeys(settings).map((stage) => [stage, 0]));
   const byAssignee = Object.fromEntries(members.map((member) => [member.id, 0]));
   let pipelineValue = 0;
   let wonValue = 0;
@@ -824,30 +954,30 @@ export async function leadStats(workspaceId) {
 
     if (lead.assigneeId && byAssignee[lead.assigneeId] !== undefined) byAssignee[lead.assigneeId] += 1;
 
-    if (lead.stage !== 'lost' && lead.stage !== 'won') pipelineValue += Number(lead.value ?? 0);
+    if (!closed.has(lead.stage)) pipelineValue += Number(lead.value ?? 0);
 
-    if (lead.stage === 'won') {
+    if (wonStages.has(lead.stage)) {
       wonValue += Number(lead.value ?? 0);
       if (lead.updatedAt >= monthStart) monthWon += 1;
     }
 
     if (lead.createdAt >= weekAgo) weekLeads += 1;
 
-    if (isOpen(lead) && lead.ackDeadline && !lead.acknowledgedAt) {
+    if (!closed.has(lead.stage) && lead.ackDeadline && !lead.acknowledgedAt) {
       unacknowledged += 1;
       if (secondsOverdue(lead) > 0) overdue += 1;
     }
   }
 
   const total = rows.length;
-  const won = byStage.won;
+  const won = [...wonStages].reduce((count, key) => count + (byStage[key] ?? 0), 0);
 
   return {
     generatedAt: nowIso(),
     total,
     byStage,
     byAssignee,
-    stageLabels: STAGE_LABELS,
+    stageLabels: stageLabelsFrom(settings.pipeline),
     pipelineValue: Math.round(pipelineValue * 100) / 100,
     wonValue: Math.round(wonValue * 100) / 100,
     weekLeads,
@@ -903,7 +1033,7 @@ export async function recoveryQueue(workspaceId) {
   const items = [];
 
   for (const lead of rows) {
-    if (!isOpen(lead)) continue;
+    if (closedKeys(settings).has(lead.stage)) continue;
 
     const reasons = [];
     const overdue = secondsOverdue(lead);
