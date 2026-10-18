@@ -192,6 +192,20 @@ export function optOutBlocked(contact) {
   return Boolean(contact?.optOut?.whatsapp);
 }
 
+/** Reverse of the opt-out: they asked back in, so clear it and say when. */
+export async function optInContact({ workspaceId, id }) {
+  return contacts.mutate((rows) => {
+    const row = rows.find((entry) => entry.id === id && entry.workspaceId === workspaceId);
+
+    if (!row) return null;
+
+    row.optOut = { whatsapp: false, at: new Date().toISOString(), reason: null };
+    row.updatedAt = row.optOut.at;
+
+    return row;
+  });
+}
+
 /** How many records still point here, so a delete can refuse rather than orphan. */
 export async function contactReferences(workspaceId, id) {
   const opportunities = await db.collection('leads').where(

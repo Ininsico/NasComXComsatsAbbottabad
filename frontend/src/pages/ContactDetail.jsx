@@ -1,7 +1,7 @@
-import { ArrowLeft, ShieldAlert, TriangleAlert } from 'lucide-react';
+import { ArrowLeft, Send, ShieldAlert, TriangleAlert } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { contactsApi } from '../lib/api.js';
+import { contactsApi, messagesApi } from '../lib/api.js';
 import { useAuth } from '../context/authContext.js';
 import { useToast } from '../context/toastContext.js';
 import { countdown } from '../lib/countdown.js';
@@ -20,20 +20,28 @@ export default function ContactDetail() {
   const { showToast } = useToast();
 
   const [state, setState] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [draft, setDraft] = useState('');
+  const [sending, setSending] = useState(false);
   const [now, setNow] = useState(() => Date.now());
 
   const fetchAll = useCallback(async () => {
-    const payload = await contactsApi.get(token, id);
+    const [contactPayload, messagePayload] = await Promise.all([
+      contactsApi.get(token, id),
+      messagesApi.list(token, { contactId: id, limit: 50 }).catch(() => ({ messages: [] })),
+    ]);
 
-    return payload;
+    return { contactPayload, messagePayload };
   }, [id, token]);
 
   useEffect(() => {
     let active = true;
 
     fetchAll()
-      .then((payload) => {
-        if (active) setState(payload);
+      .then(({ contactPayload, messagePayload }) => {
+        if (!active) return;
+        setState(contactPayload);
+        setMessages(messagePayload.messages ?? []);
       })
       .catch((error) => {
         if (active) showToast({ tone: 'error', title: 'Could not load the contact', message: error.message });
@@ -46,6 +54,34 @@ export default function ContactDetail() {
       clearInterval(timer);
     };
   }, [fetchAll, showToast]);
+
+  /** Sends through the workspace's linked number, if it has one. */
+  async function sendMessage(event) {
+    event.preventDefault();
+    setSending(true);
+
+    try {
+      // The nearest open opportunity on this contact, so the message lands on a lead too.
+      const nearOpportunity = state.opportunities.find((lead) => !['won', 'lost'].includes(lead.stage));
+
+      await messagesApi.send(token, {
+        contactId: contact.id,
+        leadId: nearOpportunity?.id ?? undefined,
+        body: draft,
+      });
+
+      setDraft('');
+
+      const { messagePayload } = await fetchAll();
+
+      setMessages(messagePayload.messages ?? []);
+      showToast({ tone: 'success', title: 'Message sent' });
+    } catch (sendError) {
+      showToast({ tone: 'error', title: 'Could not send', message: sendError.message });
+    } finally {
+      setSending(false);
+    }
+  }
 
   if (!state) return <p className="hint">Loading contact…</p>;
 
@@ -134,11 +170,60 @@ export default function ContactDetail() {
       </section>
 
       <section className="dash-section">
-        <h2 className="dash-section__title">Conversations and payments</h2>
-        <p className="hint">
-          A WhatsApp conversation thread and the payments for this person are not wired to this page
-          yet. Messages sent from the integrations page are recorded on their own connector.
-        </p>
+        <h2 className="dash-section__title">Conversations</h2>
+
+        {contact.optOut?.whatsapp ? (
+          <p className="alert alert--error">
+            <ShieldAlert size={15} aria-hidden="true" />
+            Opted out {contact.optOut.at ? `on ${new Date(contact.optOut.at).toLocaleString()}` : ''}
+            {contact.optOut.reason ? ` — ${contact.optOut.reason}` : ''}. Messaging is blocked and the
+            send form stays disabled.
+          </p>
+        ) : null}
+
+        {messages.length === 0 ? (
+          <p className="hint">
+            Nothing recorded yet. Inbound messages on the linked number, and sends from here, both
+            land in this thread.
+          </p>
+        ) : (
+          <ul className="voice-log">
+            {messages.map((message) => (
+              <li className="voice-turn" key={message.id}>
+                <span className="label-micro">
+                  {message.direction} · {message.provider} ·{' '}
+                  {new Date(message.at).toLocaleString()}{' '}
+                  {message.status && message.status !== 'received' ? `· ${message.status}` : ''}
+                </span>
+                <p>{message.body}</p>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <form
+          className="form"
+          style={{ marginTop: '0.75rem' }}
+          onSubmit={sendMessage}
+        >
+          <div className="field">
+            <label htmlFor="contact-message">Send a WhatsApp message</label>
+            <input
+              id="contact-message"
+              className="input"
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              placeholder={contact.optOut?.whatsapp ? 'Messaging is blocked for this contact' : `To ${contact.phone || '—'}`}
+              disabled={Boolean(contact.optOut?.whatsapp) || !contact.phone}
+              required
+            />
+          </div>
+          <button type="submit" className="btn btn-primary btn-sm" disabled={sending || Boolean(contact.optOut?.whatsapp) || !contact.phone}>
+            <Send size={14} aria-hidden="true" />
+            {sending ? 'Sending…' : 'Send message'}
+          </button>
+          {!contact.phone ? <p className="hint">Add a phone number to reply on WhatsApp.</p> : null}
+        </form>
       </section>
     </>
   );

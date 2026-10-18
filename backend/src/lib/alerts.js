@@ -43,6 +43,28 @@ export function configuredChannels(settings) {
   return channels;
 }
 
+/**
+ * A member's own alert destinations, in the same shape as the workspace channels.
+ *
+ * Stored on the member because an escalation belongs to a person; falls back to the
+ * workspace's channels when they kept their own empty. Telegram here carries the member's
+ * chat id and uses THE WORKSPACE's bot token, so one shared bot sends personal messages
+ * without every member provisioning their own.
+ */
+export function channelsForMember(member, settings) {
+  const routing = member?.notificationRouting ?? {};
+  const channels = [];
+
+  if (routing.webhookUrl) channels.push({ channel: 'webhook', target: routing.webhookUrl });
+  if (routing.slackWebhookUrl) channels.push({ channel: 'slack', target: routing.slackWebhookUrl });
+
+  if (routing.telegramChatId && settings?.alerts?.telegramBotToken) {
+    channels.push({ channel: 'telegram', target: `chat:${routing.telegramChatId}` });
+  }
+
+  return channels;
+}
+
 function payloadFor(channel, message, settings) {
   if (channel === 'slack') {
     return { text: `*${message.title}*\n${message.body}` };
@@ -65,11 +87,25 @@ function payloadFor(channel, message, settings) {
 }
 
 /**
- * Send one alert to every configured channel and record each attempt. Returns the
- * persisted attempts so a caller can show "no channel configured" honestly.
+ * How many times a failing channel is tried before it is left as failed. Recorded per
+ * attempt, so an admin can see the pattern instead of a single ambiguous line. Small on
+ * purpose: a dead endpoint burns real seconds on the escalation path.
  */
-export async function notify({ workspaceId, leadId = null, title, body, level = null, settings }) {
-  const channels = configuredChannels(settings);
+const RETRY_ATTEMPTS = Number(process.env.ALERT_RETRY_ATTEMPTS ?? 2);
+
+/** Wait between retries, milliseconds: 800, then 1600. */
+const backoff = (attempt) => 400 * 2 ** (attempt - 1);
+
+/**
+ * Send one alert to every configured channel — with the new owner's own destinations first
+ * when they are set, because "your lead needs a reply" belongs on that person's Telegram,
+ * not on a shared channel that everyone mutes.
+ *
+ * Every attempt is recorded, including retries; the caller can show "no channel configured"
+ * honestly.
+ */
+export async function notify({ workspaceId, leadId = null, title, body, level = null, settings, destinations = null }) {
+  const channels = destinations?.length > 0 ? destinations : configuredChannels(settings);
   const now = new Date().toISOString();
 
   if (channels.length === 0) {
@@ -94,43 +130,45 @@ export async function notify({ workspaceId, leadId = null, title, body, level = 
   for (const { channel, target } of channels) {
     const prepared = payloadFor(channel, { title, body, leadId, level }, settings);
 
-    try {
-      if (channel === 'telegram') {
-        await post(prepared.url, prepared.body);
-      } else {
-        await post(target, prepared);
-      }
+    let outcome = null;
 
-      attempts.push(
-        await alerts.insert({
-          workspaceId,
-          leadId,
-          channel,
-          target,
-          title,
-          body,
-          level,
+    // Retried attempts happen with a short sleep between them and are recorded as their own
+    // attempt row, so the history shows "tried twice, failed twice" rather than one error.
+    for (let attempt = 1; attempt <= RETRY_ATTEMPTS; attempt += 1) {
+      if (attempt > 1) await new Promise((resolve) => setTimeout(resolve, backoff(attempt)));
+
+      try {
+        if (channel === 'telegram') {
+          await post(prepared.url, prepared.body);
+        } else {
+          await post(target, prepared);
+        }
+
+        outcome = {
           status: 'sent',
           error: null,
-          at: now,
-        }),
-      );
-    } catch (error) {
-      attempts.push(
-        await alerts.insert({
-          workspaceId,
-          leadId,
-          channel,
-          target,
-          title,
-          body,
-          level,
-          status: 'failed',
-          error: String(error.message ?? error).slice(0, 300),
-          at: now,
-        }),
-      );
+        };
+        break;
+      } catch (error) {
+        outcome = { status: 'failed', error: String(error.message ?? error).slice(0, 300), attempt };
+      }
     }
+
+    attempts.push(
+      await alerts.insert({
+        workspaceId,
+        leadId,
+        channel,
+        target,
+        title,
+        body,
+        level,
+        status: outcome.status,
+        attempt: outcome.attempt ?? 1,
+        error: outcome.error,
+        at: new Date().toISOString(),
+      }),
+    );
   }
 
   return attempts;

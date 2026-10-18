@@ -70,6 +70,18 @@ export async function updateMember(id, workspaceId, patch) {
     if (Array.isArray(patch.granted)) member.granted = patch.granted;
     if (Array.isArray(patch.revoked)) member.revoked = patch.revoked;
 
+    // Per-user notification routing: where an escalation for THIS person is sent. Empty
+    // fields fall back to the workspace's channels; the bot token stays with the workspace.
+    if (patch.notificationRouting !== undefined) {
+      const route = patch.notificationRouting ?? {};
+
+      member.notificationRouting = {
+        webhookUrl: text(route.webhookUrl, 400),
+        slackWebhookUrl: text(route.slackWebhookUrl, 400),
+        telegramChatId: text(route.telegramChatId, 80),
+      };
+    }
+
     return member;
   });
 }

@@ -198,6 +198,16 @@ export const contactsApi = {
     request(`/api/contacts/${encodeURIComponent(id)}/opt-out`, { method: 'POST', body: { reason }, token }),
 };
 
+/** The WhatsApp conversation ledger around contacts and leads. */
+export const messagesApi = {
+  list: (token, { contactId, leadId, limit } = {}) =>
+    request(
+      `/api/messages${query({ contactId, leadId, limit })}`,
+      { token },
+    ),
+  send: (token, body) => request('/api/messages/send', { method: 'POST', body, token }),
+};
+
 /** Workspace administration: settings, members and configurable roles. */
 export const workspaceApi = {
   get: (token) => request('/api/workspace', { token }),

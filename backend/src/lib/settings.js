@@ -43,10 +43,19 @@ export const DEFAULTS = {
 };
 
 function merge(base, patch) {
+  // An explicitly-undefined alerts key means "keep what is stored" — the integrations page
+  // blanks secret fields rather than round-tripping them, so a save must not clobber a
+  // stored bot token with undefined.
+  const alertPatch = {};
+
+  for (const [key, value] of Object.entries(patch?.alerts ?? {})) {
+    if (value !== undefined) alertPatch[key] = value;
+  }
+
   return {
     ...base,
     ...patch,
-    alerts: { ...base.alerts, ...(patch?.alerts ?? {}) },
+    alerts: { ...base.alerts, ...alertPatch },
     businessHours: { ...base.businessHours, ...(patch?.businessHours ?? {}) },
   };
 }

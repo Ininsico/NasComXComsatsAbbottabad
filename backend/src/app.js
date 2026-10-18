@@ -13,6 +13,7 @@ import crmRoutes from './routes/crm.js';
 import dashboardRoutes from './routes/dashboard.js';
 import deployRoutes from './routes/deploy.js';
 import integrationRoutes from './routes/integrations.js';
+import messageRoutes from './routes/messages.js';
 import paymentRoutes, { stripeWebhookHandler } from './routes/payments.js';
 import profileRoutes from './routes/profile.js';
 import subscriptionRoutes from './routes/subscriptions.js';
@@ -65,6 +66,9 @@ export function createApp() {
   app.use('/api/profile', profileRoutes);
   app.use('/api/ai', aiRoutes);
   app.use('/api/whatsapp', whatsappRoutes);
+
+  // Conversation ledger: read + send for contacts/leads.
+  app.use('/api/messages', messageRoutes);
 
   // Every connector a workspace can attach, in one read.
   app.use('/api/integrations', integrationRoutes);

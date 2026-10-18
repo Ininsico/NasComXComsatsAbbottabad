@@ -1,6 +1,6 @@
 import { db } from './db.js';
 import { record as audit } from './audit.js';
-import { notify } from './alerts.js';
+import { channelsForMember, notify } from './alerts.js';
 import { dueSteps, pickRoundRobin, resolveTarget } from './assignment.js';
 import { findOrCreateCompany } from './companies.js';
 import { createContact, findContactForIdentity, listContacts, updateContact } from './contacts.js';
@@ -332,6 +332,7 @@ export async function createLead({ workspaceId, input, actorId = null, actorName
       ? `${created.name} arrived from ${created.source} and was assigned to ${assignee.name}. Acknowledge within ${settings.acknowledgeSeconds}s.`
       : `${created.name} arrived from ${created.source} but no member was under their open-lead limit.`,
     settings,
+    destinations: channelsForMember(assignee ?? {}, settings),
   });
 
   return { lead: created, assignee };
@@ -474,6 +475,9 @@ export async function escalateDue({ now = Date.now(), workspaceId = null } = {})
           title: `Escalation ${index + 1}: ${lead.name} not acknowledged`,
           body: `${lead.name} (${lead.source}) was not acknowledged. Moved from ${fromName} to ${toName}.`,
           settings,
+          // The new owner's own destinations come first; the workspace channels are the
+          // fallback when a person has not set theirs.
+          destinations: channelsForMember(target, settings),
         });
 
         applied.push({ leadId: lead.id, level: index + 1, to: step.to, assignee: target?.id ?? null });
@@ -523,7 +527,8 @@ export async function updateLead({ workspaceId, id, patch, actorId = null, actor
 
     Object.assign(row, changes, { updatedAt: nowIso() });
 
-    if (changes.stage === 'enrolled' || changes.stage === 'lost') {
+    if (CLOSED.has(changes.stage)) {
+      // A closed stage stops the clock: nobody owes a first reply on a finished deal.
       row.ackDeadline = null;
     }
 
@@ -545,6 +550,43 @@ export async function updateLead({ workspaceId, id, patch, actorId = null, actor
       action: 'lead.stage_changed',
       target: id,
       metadata: { from: existing.stage, to: changes.stage },
+    });
+  }
+
+  // Field edits are part of the history too, recording before/after for the fields that
+  // change who the customer is or what the deal is worth.
+  const EDITABLE = ['name', 'email', 'phone', 'company', 'value', 'notes'];
+  const edits = Object.entries(changes).filter(
+    ([field, to]) =>
+      EDITABLE.includes(field) &&
+      String(existing[field] ?? '') !== String(to ?? '') &&
+      field !== 'stage',
+  );
+
+  if (edits.length > 0) {
+    const beforeAfter = Object.fromEntries(
+      edits.map(([field, to]) => [
+        field,
+        { from: existing[field] ?? null, to: to ?? null },
+      ]),
+    );
+
+    await addActivity({
+      workspaceId,
+      leadId: id,
+      kind: 'system',
+      summary: `Updated ${Object.keys(beforeAfter)
+        .map((field) => (field === 'value' ? 'opportunity value' : field))
+        .join(', ')}`,
+      by: actorName,
+    });
+
+    await audit({
+      workspaceId,
+      actorId,
+      action: 'lead.field_edited',
+      target: id,
+      metadata: { changes: beforeAfter },
     });
   }
 
@@ -709,8 +751,14 @@ export async function listActivities(workspaceId, { leadId, limit = 50 } = {}) {
   return rows.sort((a, b) => b.at.localeCompare(a.at)).slice(0, Math.min(Number(limit) || 50, 200));
 }
 
+/**
+ * One entry in the lead's timeline. The activity kinds cover the spec's list — note, stage
+ * change, assignment, message, payment, appointment, system — and callers make sure an
+ * acknowledgement-shaped action (any of them) clears the clock, because that is the
+ * contract the countdown is built on.
+ */
 export async function addActivity({ workspaceId, leadId, kind, summary, by = 'system' }) {
-  return activities.insert({
+  const created = await activities.insert({
     workspaceId,
     leadId,
     kind,
@@ -718,6 +766,22 @@ export async function addActivity({ workspaceId, leadId, kind, summary, by = 'sy
     by,
     at: nowIso(),
   });
+
+  // Recording any action IS the acknowledgement. Without this the clock keeps running past
+  // a note someone just wrote, which is exactly the disagreement the queue should not have.
+  if (leadId && kind !== 'system') {
+    await leads.mutate((rows) => {
+      const row = rows.find((entry) => entry.id === leadId && entry.workspaceId === workspaceId);
+
+      if (!row || row.acknowledgedAt) return null;
+
+      row.acknowledgedAt = nowIso();
+
+      return row;
+    });
+  }
+
+  return created;
 }
 
 export async function leadStats(workspaceId) {

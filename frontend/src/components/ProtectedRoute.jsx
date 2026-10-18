@@ -2,6 +2,8 @@ import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/authContext.js';
 import { SkeletonList, SkeletonTile, SkeletonTitle } from './Skeletons.jsx';
 
+// The spec's navigation promise: signing in lands on the dashboard. A role that cannot read
+// the CRM still gets the overview rather than a dead end.
 export default function ProtectedRoute({ children, roles }) {
   const { user, loading } = useAuth();
   const location = useLocation();
@@ -26,7 +28,7 @@ export default function ProtectedRoute({ children, roles }) {
   }
 
   if (roles && !roles.includes(user.role)) {
-    return <Navigate to="/crm" replace />;
+    return <Navigate to="/dashboard" replace />;
   }
 
   return children;

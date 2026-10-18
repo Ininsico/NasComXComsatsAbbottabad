@@ -283,6 +283,21 @@ export async function startWhatsApp(scope = MAIN) {
       }
     });
 
+    session.client.on('message_ack', async (message, ack) => {
+      // 2 delivered, 3 read on WhatsApp's scale. Routed to whichever scope recorded the
+      // send, so the ledger shows deliveries without claiming more than the client knows.
+      try {
+        const { markMessageStatus } = await import('./conversations.js');
+        const providerMessageId = message.id?._serialized ?? null;
+
+        if (!providerMessageId) return;
+
+        if (ack >= 2) await markMessageStatus(providerMessageId, ack >= 3 ? 'read' : 'delivered');
+      } catch (error) {
+        console.error(`[whatsapp:${scope}][ack] ${error.message}`);
+      }
+    });
+
     try {
       await session.client.initialize();
     } catch (error) {

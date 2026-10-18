@@ -19,7 +19,7 @@ export default function Signup() {
   const { user } = useAuth();
 
   if (user) {
-    return <Navigate to="/crm" replace />;
+    return <Navigate to="/dashboard" replace />;
   }
 
   return (

@@ -58,7 +58,7 @@ export default function Login() {
     };
   }, []);
 
-  const redirectTo = location.state?.from ?? '/crm';
+  const redirectTo = location.state?.from ?? '/dashboard';
 
   if (user) {
     return <Navigate to={redirectTo} replace />;

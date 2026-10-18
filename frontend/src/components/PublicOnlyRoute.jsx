@@ -25,7 +25,7 @@ export default function PublicOnlyRoute({ children }) {
   }
 
   if (user) {
-    return <Navigate to="/crm" replace />;
+    return <Navigate to="/dashboard" replace />;
   }
 
   return children;

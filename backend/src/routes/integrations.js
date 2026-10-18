@@ -52,12 +52,15 @@ router.get('/', requireAuth, workspaceContext, async (req, res) => {
       },
     },
     alerts: {
+      // The bot token is a secret: the page learns only THAT IT EXISTS, never the value,
+      // so a page refresh can never leak it into a screenshot or a network tab.
       channels: {
         webhookUrl: settings.alerts?.webhookUrl ?? '',
         slackWebhookUrl: settings.alerts?.slackWebhookUrl ?? '',
-        telegramBotToken: settings.alerts?.telegramBotToken ?? '',
+        telegramBotToken: '',
         telegramChatId: settings.alerts?.telegramChatId ?? '',
       },
+      telegramBotTokenSet: Boolean(settings.alerts?.telegramBotToken),
       configured:
         Boolean(settings.alerts?.webhookUrl) ||
         Boolean(settings.alerts?.slackWebhookUrl) ||

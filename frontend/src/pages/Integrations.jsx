@@ -43,6 +43,7 @@ export default function Integrations() {
 
   const [data, setData] = useState(null);
   const [channels, setChannels] = useState(null);
+  const [tokenSaved, setTokenSaved] = useState(false);
   const [busy, setBusy] = useState('');
   const [testNumber, setTestNumber] = useState('');
   const [testText, setTestText] = useState('');
@@ -69,7 +70,10 @@ export default function Integrations() {
 
     fetchAll()
       .then((payload) => {
-        if (active) apply(payload);
+        if (active) {
+          apply(payload);
+          setTokenSaved(Boolean(payload.alerts?.telegramBotTokenSet));
+        }
       })
       .catch((error) => {
         if (active) {
@@ -400,7 +404,15 @@ export default function Integrations() {
 
               void run(
                 'channels',
-                () => workspaceApi.updateSettings(token, { alerts: channels }),
+                () =>
+                  workspaceApi.updateSettings(token, {
+                    alerts: {
+                      ...channels,
+                      // A blank token means "keep the one stored", not "delete it": the
+                      // browser never receives the value, so it cannot send it back.
+                      ...(channels?.telegramBotToken ? {} : { telegramBotToken: undefined }),
+                    },
+                  }),
                 'Alert channels saved',
               );
             }}
@@ -432,7 +444,14 @@ export default function Integrations() {
                   className="input"
                   value={channels?.telegramBotToken ?? ''}
                   onChange={(event) => setChannels({ ...channels, telegramBotToken: event.target.value })}
+                  placeholder={tokenSaved ? '•••••••• already saved — leave blank to keep it' : '123456:ABC-DEF…'}
                 />
+                {tokenSaved && !channels?.telegramBotToken ? (
+                  <p className="hint" style={{ margin: 0 }}>
+                    A token is stored on the server and is never shown to a browser. Type a new one to
+                    replace it.
+                  </p>
+                ) : null}
               </div>
               <div className="field">
                 <label htmlFor="telegram-chat">Telegram chat id</label>
