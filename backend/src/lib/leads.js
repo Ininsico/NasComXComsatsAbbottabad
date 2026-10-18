@@ -2,6 +2,8 @@ import { db } from './db.js';
 import { record as audit } from './audit.js';
 import { notify } from './alerts.js';
 import { dueSteps, pickRoundRobin, resolveTarget } from './assignment.js';
+import { findOrCreateCompany } from './companies.js';
+import { createContact, findContactForIdentity, listContacts, updateContact } from './contacts.js';
 import { listMembers } from './members.js';
 import { getSettings } from './settings.js';
 
@@ -76,7 +78,7 @@ export function validateLead(input, { partial = false } = {}) {
     else lead.source = source || 'manual';
   }
 
-  if (input?.programme !== undefined) lead.programme = text(input.programme, 120);
+  if (input?.company !== undefined) lead.company = text(input.company, 120);
 
   if (input?.stage !== undefined) {
     const stage = text(input.stage, 20).toLowerCase();
@@ -118,38 +120,49 @@ export async function listLeads(workspaceId, { stage, query, assigneeId, unackno
   const needle = text(query, 120).toLowerCase();
   const wantedStage = text(stage, 20).toLowerCase();
 
-  return rows
-    .filter((lead) => {
-      if (wantedStage && lead.stage !== wantedStage) return false;
-      if (assigneeId && lead.assigneeId !== assigneeId) return false;
-      if (unacknowledged === 'true' && (lead.acknowledgedAt || !lead.ackDeadline)) return false;
-      if (!needle) return true;
+  return hydrate(
+    workspaceId,
+    rows
+      .filter((lead) => {
+        if (wantedStage && lead.stage !== wantedStage) return false;
+        if (assigneeId && lead.assigneeId !== assigneeId) return false;
+        if (unacknowledged === 'true' && (lead.acknowledgedAt || !lead.ackDeadline)) return false;
+        if (!needle) return true;
 
-      return [lead.name, lead.email, lead.phone, lead.programme, lead.notes]
-        .some((field) => text(field).toLowerCase().includes(needle));
-    })
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-    .map((lead) => ({
-      ...lead,
-      assigneeName: lead.assigneeId ? (names.get(lead.assigneeId) ?? 'Unknown') : null,
-      overdueSeconds: secondsOverdue(lead),
-    }));
+        return [lead.name, lead.email, lead.phone, lead.company, lead.notes]
+          .some((field) => text(field).toLowerCase().includes(needle));
+      })
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .map((lead) => ({
+        ...lead,
+        assigneeName: lead.assigneeId ? (names.get(lead.assigneeId) ?? 'Unknown') : null,
+        overdueSeconds: secondsOverdue(lead),
+      })),
+  );
 }
 
 export async function findLead(id, workspaceId) {
-  const lead = await leads.find((row) => row.id === id && row.workspaceId === workspaceId);
+  const leadRow = await leads.find((row) => row.id === id && row.workspaceId === workspaceId);
 
-  if (!lead) return null;
+  if (!leadRow) return null;
 
-  const memberRows = await listMembers(workspaceId);
-  const names = new Map(memberRows.map((member) => [member.id, member.name]));
+  const [activities, [hydratedLead]] = await Promise.all([
+    listActivities(workspaceId, { leadId: id }),
+    (async () => {
+      const memberRows = await listMembers(workspaceId);
+      const names = new Map(memberRows.map((member) => [member.id, member.name]));
 
-  return {
-    ...lead,
-    assigneeName: lead.assigneeId ? (names.get(lead.assigneeId) ?? 'Unknown') : null,
-    overdueSeconds: secondsOverdue(lead),
-    activities: await listActivities(workspaceId, { leadId: id }),
-  };
+      return hydrate(workspaceId, [
+        {
+          ...leadRow,
+          assigneeName: leadRow.assigneeId ? (names.get(leadRow.assigneeId) ?? 'Unknown') : null,
+          overdueSeconds: secondsOverdue(leadRow),
+        },
+      ]);
+    })(),
+  ]);
+
+  return { ...hydratedLead, activities };
 }
 
 function secondsOverdue(lead) {
@@ -160,6 +173,34 @@ function secondsOverdue(lead) {
   if (!Number.isFinite(deadline)) return 0;
 
   return Math.max(0, Math.round((Date.now() - deadline) / 1000));
+}
+
+/**
+ * The parent records, joined in so a lead can be shown as a person under a company.
+ * The lead carries its own company name from capture; the contact row is authoritative
+ * when the two differ, and a null contact leaves the lead anonymous.
+ */
+async function hydrate(workspaceId, rows) {
+  const [contactRows, companyRows] = await Promise.all([
+    listContacts(workspaceId),
+    db.collection('companies').where((row) => row.workspaceId === workspaceId),
+  ]);
+
+  const contactById = new Map(contactRows.map((row) => [row.id, row]));
+  const companyById = new Map(companyRows.map((row) => [row.id, row.name]));
+
+  return rows.map((row) => {
+    const contact = row.contactId ? (contactById.get(row.contactId) ?? null) : null;
+    const companyId = row.companyId ?? contact?.companyId ?? null;
+
+    return {
+      ...row,
+      contact,
+      contactName: contact?.name ?? null,
+      companyId,
+      companyName: (companyId ? (companyById.get(companyId) ?? null) : null) ?? row.company ?? null,
+    };
+  });
 }
 
 /**
@@ -178,13 +219,62 @@ export async function createLead({ workspaceId, input, actorId = null, actorName
 
   const assignee = pickRoundRobin(members, counts, settings);
 
+  /**
+   * The parent records: a company, a contact beneath it, and this opportunity pointing at
+   * both. Only a lead with an identity (email or phone) gets a contact, because that is what
+   * makes it the same person next time; an anonymous lead stays anonymous rather than
+   * quietly becoming junk contacts. An existing identity is reused, never duplicated — the
+   * public form and an inbound WhatsApp message land on the same person this way.
+   */
+  let contactId = null;
+  let companyId = null;
+
+  if (lead.email || lead.phone || lead.company) {
+    const company = lead.company ? await findOrCreateCompany({ workspaceId, name: lead.company }) : null;
+
+    companyId = company?.id ?? null;
+
+    const existing = await findContactForIdentity(workspaceId, {
+      email: lead.contactEmail ?? lead.email,
+      phone: lead.phone,
+    });
+
+    if (existing) {
+      contactId = existing.id;
+
+      // The person is new to this company: adopt it on their contact so the model stays
+      // consistent, instead of leaving a dangling opportunity without a company.
+      if (companyId && existing.companyId !== companyId) {
+        await updateContact({
+          workspaceId,
+          id: existing.id,
+          input: { companyId },
+        });
+      }
+    } else {
+      const createdContact = await createContact({
+        workspaceId,
+        companyId,
+        input: {
+          name: lead.name || lead.email || lead.phone,
+          email: lead.email ?? '',
+          phone: lead.phone ?? '',
+        },
+      });
+
+      contactId = createdContact.contact?.id ?? createdContact.duplicate?.id ?? null;
+    }
+  }
+
   const created = await leads.insert({
     workspaceId,
     name: lead.name,
     email: lead.email ?? '',
     phone: lead.phone ?? '',
+    company: lead.company ?? '',
+    contactId,
+    companyId,
     source: lead.source ?? 'manual',
-    programme: lead.programme ?? '',
     stage: lead.stage ?? 'new',
     value: lead.value ?? 0,
     notes: lead.notes ?? '',
@@ -226,7 +316,12 @@ export async function createLead({ workspaceId, input, actorId = null, actorName
     actorId,
     action: 'lead.created',
     target: created.id,
-    metadata: { source: created.source, assigneeId: assignee?.id ?? null },
+    metadata: {
+      source: created.source,
+      assigneeId: assignee?.id ?? null,
+      contactId: created.contactId,
+      companyId: created.companyId,
+    },
   });
 
   await notify({
@@ -508,7 +603,7 @@ export async function deleteLead({ workspaceId, id, actorId = null }) {
 }
 
 /**
- * The pipeline stages were renamed when the education vocabulary was dropped (applied ->
+ * The stage keys were renamed when the education vocabulary was dropped (applied ->
  * proposal, enrolled -> won). Stored leads still carry the old keys, which would make them
  * invisible on a board built from the new ones, so this rewrites them once at boot.
  */
@@ -528,6 +623,82 @@ export async function migrateStageKeys() {
   });
 
   return changed;
+}
+
+/**
+ * Give every stored lead its contact and company, once.
+ *
+ * Idempotent on purpose: a second boot must not fork a second contact for the same person.
+ * The "Company:" line capturers typed into the notes is promoted into a real company, which
+ * is how the public form expressed it before companies existed as records.
+ */
+export async function migrateContacts() {
+  const rows = await leads.where((row) => !row.contactId);
+
+  let linked = 0;
+
+  for (const lead of rows) {
+    const companyFromNotes = /^Company:\s*(.+)\s*$/m.exec(lead.notes ?? '')?.[1]?.trim() ?? '';
+    const companyName = lead.company || companyFromNotes;
+    let companyId = null;
+
+    if (companyName) {
+      const company = await findOrCreateCompany({ workspaceId: lead.workspaceId, name: companyName });
+
+      companyId = company?.id ?? null;
+    }
+
+    let contactId = null;
+
+    if (lead.email || lead.phone) {
+      const existing = await findContactForIdentity(lead.workspaceId, {
+        email: lead.email,
+        phone: lead.phone,
+      });
+
+      if (existing) {
+        contactId = existing.id;
+        companyId = companyId ?? existing.companyId;
+
+        if (companyId && existing.companyId !== companyId) {
+          await updateContact({
+            workspaceId: lead.workspaceId,
+            id: existing.id,
+            input: { companyId },
+          });
+        }
+      } else {
+        const createdContact = await createContact({
+          workspaceId: lead.workspaceId,
+          companyId,
+          input: {
+            name: lead.name || lead.email || lead.phone,
+            email: lead.email ?? '',
+            phone: lead.phone ?? '',
+          },
+        });
+
+        contactId = createdContact.contact?.id ?? createdContact.duplicate?.id ?? null;
+      }
+    }
+
+    if (!contactId && !companyId) continue;
+
+    await leads.mutate((all) => {
+      const row = all.find((entry) => entry.id === lead.id);
+
+      if (!row) return;
+
+      // Only when still empty: a concurrent boot must not overwrite a link.
+      if (!row.contactId) row.contactId = contactId;
+      if (!row.companyId) row.companyId = companyId;
+      if (!row.company && companyName) row.company = companyName;
+    });
+
+    linked += 1;
+  }
+
+  return linked;
 }
 
 export async function listActivities(workspaceId, { leadId, limit = 50 } = {}) {

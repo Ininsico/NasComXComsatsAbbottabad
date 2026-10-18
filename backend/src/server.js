@@ -5,7 +5,7 @@ import { redirectUri as calendarRedirectUri } from './lib/calendar.js';
 import { startEscalationTicker } from './lib/escalation.js';
 import { identityRedirectUri } from './lib/googleIdentity.js';
 import { seedProductKnowledge } from './lib/knowledge.js';
-import { migrateStageKeys } from './lib/leads.js';
+import { migrateContacts, migrateStageKeys } from './lib/leads.js';
 import { startPaymentWatcher } from './lib/paymentWatcher.js';
 import { setWhatsAppHandler, sessionInfo, startWhatsApp } from './lib/whatsapp.js';
 import { createWhatsAppHandler } from './lib/whatsappBot.js';
@@ -27,6 +27,15 @@ try {
   if (migrated > 0) console.log(`Migrated ${migrated} lead(s) onto the current pipeline stages.`);
 } catch (error) {
   console.error(`Stage migration failed: ${error.message}`);
+}
+
+// Link every stored lead to its contact and company, once.
+try {
+  const linked = await migrateContacts();
+
+  if (linked > 0) console.log(`Linked ${linked} lead(s) to their contact and company.`);
+} catch (error) {
+  console.error(`Contact migration failed: ${error.message}`);
 }
 
 // Index the product help so the assistant has something true to retrieve.

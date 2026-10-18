@@ -1,5 +1,6 @@
 import {
   AudioLines,
+  Building2,
   ChevronsLeft,
   ChevronsRight,
   Kanban,
@@ -19,24 +20,26 @@ import { ADMIN_ROLE, ROLE_LABELS } from '../data/site.js';
 
 const PORTAL_LINKS = [
   { to: '/crm', label: 'Pipeline', icon: Kanban },
+  { to: '/contacts', label: 'Contacts', icon: UserRound },
+  { to: '/companies', label: 'Companies', icon: Building2 },
   { to: '/recovery', label: 'Recovery queue', icon: ShieldAlert },
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/integrations', label: 'Integrations', icon: Zap },
   { to: '/settings', label: 'Workspace', icon: Wrench },
   { to: '/voice', label: 'Voice', icon: AudioLines },
   { to: '/subscription', label: 'Subscription', icon: Wallet },
-  { to: '/profile', label: 'My profile', icon: UserRound },
 ];
 
 /** Admins land on the console, so Dashboard would only bounce them there. */
 const ADMIN_PORTAL_LINKS = [
   { to: '/crm', label: 'Pipeline', icon: Kanban },
+  { to: '/contacts', label: 'Contacts', icon: UserRound },
+  { to: '/companies', label: 'Companies', icon: Building2 },
   { to: '/recovery', label: 'Recovery queue', icon: ShieldAlert },
   { to: '/integrations', label: 'Integrations', icon: Zap },
   { to: '/settings', label: 'Workspace', icon: Wrench },
   { to: '/voice', label: 'Voice', icon: AudioLines },
   { to: '/subscription', label: 'Subscription', icon: Wallet },
-  { to: '/profile', label: 'My profile', icon: UserRound },
 ];
 
 const ADMIN_LINKS = [{ to: '/admin', label: 'Admin console', icon: ShieldCheck }];

@@ -175,6 +175,29 @@ export const crmApi = {
   exportUrl: () => `${BASE_URL}/api/crm/export`,
 };
 
+/** The model above the pipeline: everyone's records, all permission-gated like the CRM. */
+export const companiesApi = {
+  all: (token) => request('/api/companies', { token }),
+  create: (token, body) => request('/api/companies', { method: 'POST', body, token }),
+  get: (token, id) => request(`/api/companies/${encodeURIComponent(id)}`, { token }),
+  update: (token, id, body) =>
+    request(`/api/companies/${encodeURIComponent(id)}`, { method: 'PATCH', body, token }),
+  remove: (token, id) =>
+    request(`/api/companies/${encodeURIComponent(id)}`, { method: 'DELETE', token }),
+};
+
+export const contactsApi = {
+  all: (token) => request('/api/contacts', { token }),
+  create: (token, body) => request('/api/contacts', { method: 'POST', body, token }),
+  get: (token, id) => request(`/api/contacts/${encodeURIComponent(id)}`, { token }),
+  update: (token, id, body) =>
+    request(`/api/contacts/${encodeURIComponent(id)}`, { method: 'PATCH', body, token }),
+  remove: (token, id) =>
+    request(`/api/contacts/${encodeURIComponent(id)}`, { method: 'DELETE', token }),
+  optOut: (token, id, reason) =>
+    request(`/api/contacts/${encodeURIComponent(id)}/opt-out`, { method: 'POST', body: { reason }, token }),
+};
+
 /** Workspace administration: settings, members and configurable roles. */
 export const workspaceApi = {
   get: (token) => request('/api/workspace', { token }),

@@ -7,7 +7,11 @@ import PublicOnlyRoute from './components/PublicOnlyRoute.jsx';
 import ScrollToTop from './components/ScrollToTop.jsx';
 import About from './pages/About.jsx';
 import Admin from './pages/Admin.jsx';
+import Companies from './pages/Companies.jsx';
+import CompanyDetail from './pages/CompanyDetail.jsx';
 import Contact from './pages/Contact.jsx';
+import ContactDetail from './pages/ContactDetail.jsx';
+import Contacts from './pages/Contacts.jsx';
 import Crm from './pages/Crm.jsx';
 import CrmLead from './pages/CrmLead.jsx';
 import Dashboard from './pages/Dashboard.jsx';
@@ -68,6 +72,10 @@ export default function App() {
         >
           <Route path="crm" element={<Crm />} />
           <Route path="crm/:id" element={<CrmLead />} />
+          <Route path="companies" element={<Companies />} />
+          <Route path="companies/:id" element={<CompanyDetail />} />
+          <Route path="contacts" element={<Contacts />} />
+          <Route path="contacts/:id" element={<ContactDetail />} />
           <Route path="recovery" element={<Recovery />} />
           <Route path="subscription" element={<Subscription />} />
           <Route path="integrations" element={<Integrations />} />

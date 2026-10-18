@@ -7,6 +7,8 @@ import adminRoutes from './routes/admin.js';
 import aiRoutes from './routes/ai.js';
 import authRoutes from './routes/auth.js';
 import calendarRoutes from './routes/calendar.js';
+import companiesRoutes from './routes/companies.js';
+import contactsRoutes from './routes/contacts.js';
 import crmRoutes from './routes/crm.js';
 import dashboardRoutes from './routes/dashboard.js';
 import deployRoutes from './routes/deploy.js';
@@ -66,6 +68,10 @@ export function createApp() {
 
   // Every connector a workspace can attach, in one read.
   app.use('/api/integrations', integrationRoutes);
+
+  // The model above the pipeline; both are permission-gated like the CRM itself.
+  app.use('/api/companies', companiesRoutes);
+  app.use('/api/contacts', contactsRoutes);
 
   // Plan, status, limits and invoices for the workspace.
   app.use('/api/subscription', subscriptionRoutes);

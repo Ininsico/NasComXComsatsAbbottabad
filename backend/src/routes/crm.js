@@ -46,7 +46,7 @@ router.post('/demo-request', async (req, res) => {
       email: req.body?.email,
       phone: req.body?.phone ?? '',
       source: 'website',
-      programme: req.body?.company ?? '',
+      company: req.body?.company ?? '',
       notes: [req.body?.company ? `Company: ${req.body.company}` : '', req.body?.message ?? '']
         .filter(Boolean)
         .join('\n'),
