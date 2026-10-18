@@ -312,6 +312,80 @@ export default function CrmLead() {
         </div>
       </section>
 
+      {(meta?.customFields ?? []).length > 0 ? (
+        <section className="card" style={{ marginBottom: '1.25rem' }}>
+          <span className="label-micro">Extra fields</span>
+          <p className="hint" style={{ marginTop: '0.25rem' }}>
+            Defined by the workspace admin. The server validates type, options and required flags on
+            every save.
+          </p>
+
+          <div className="form">
+            <div className="grid grid-2">
+              {(meta.customFields ?? []).map((field) => {
+                const stored = lead.fields?.[field.key] ?? '';
+                const save = (next) =>
+                  act(
+                    () =>
+                      crmApi.updateLead(token, lead.id, {
+                        fields: { ...(lead.fields ?? {}), [field.key]: next },
+                      }),
+                    `${field.label} updated`,
+                  );
+
+                return (
+                  <div className="field" key={field.key}>
+                    <label htmlFor={`cf-${field.key}`}>
+                      {field.label}
+                      {field.required ? ' *' : ''}
+                    </label>
+
+                    {field.type === 'dropdown' ? (
+                      <select
+                        id={`cf-${field.key}`}
+                        className="select"
+                        defaultValue={stored}
+                        disabled={!canEdit}
+                        onChange={(event) => save(event.target.value)}
+                      >
+                        <option value="">—</option>
+                        {(field.options ?? []).map((option) => (
+                          <option key={option} value={option}>
+                            {option}
+                          </option>
+                        ))}
+                      </select>
+                    ) : field.type === 'checkbox' ? (
+                      <label className="hint" style={{ display: 'inline-flex', gap: '0.3rem' }}>
+                        <input
+                          id={`cf-${field.key}`}
+                          type="checkbox"
+                          defaultChecked={Boolean(stored)}
+                          disabled={!canEdit}
+                          onChange={(event) => save(event.target.checked)}
+                        />
+                        Yes
+                      </label>
+                    ) : (
+                      <input
+                        id={`cf-${field.key}`}
+                        className="input"
+                        type={field.type === 'number' ? 'number' : field.type === 'date' ? 'date' : 'text'}
+                        defaultValue={stored}
+                        disabled={!canEdit}
+                        onBlur={(event) => {
+                          if (String(event.target.value) !== String(stored)) save(event.target.value);
+                        }}
+                      />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </section>
+      ) : null}
+
       <section className="dash-section">
         <h2 className="dash-section__title">Activity</h2>
 

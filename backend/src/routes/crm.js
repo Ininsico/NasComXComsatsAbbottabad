@@ -68,6 +68,7 @@ router.get('/meta', async (req, res) => {
 
   res.json({
     stages: settings.pipeline,
+    customFields: settings.customFields ?? [],
     sources: ['website', 'whatsapp', 'sms', 'walk-in', 'phone', 'referral', 'event', 'manual'],
     workspace: { id: req.workspace.id, name: req.workspace.name },
     member: { id: req.member.id, level: req.member.level, permissions: req.permissions },

@@ -19,6 +19,26 @@ const TARGETS = [
  * the role's bundle, plus grants, minus revocations) and enforces it on every endpoint,
  * so this page decides what people may do rather than what they see.
  */
+const REQUIRABLE = [
+  { key: 'name', label: 'Name' },
+  { key: 'email', label: 'Email' },
+  { key: 'phone', label: 'Phone' },
+  { key: 'company', label: 'Company' },
+  { key: 'value', label: 'Value' },
+  { key: 'notes', label: 'Notes' },
+];
+
+const FIELD_TYPES = [
+  { value: 'text', label: 'Text' },
+  { value: 'number', label: 'Number' },
+  { value: 'date', label: 'Date' },
+  { value: 'dropdown', label: 'Dropdown' },
+  { value: 'checkbox', label: 'Checkbox' },
+];
+
+const EMPTY_STAGE = { key: '', label: '', required: [], isClosed: false, isWon: false };
+const EMPTY_FIELD = { key: '', label: '', type: 'text', options: '', required: false };
+
 export default function WorkspaceSettings() {
   const { token } = useAuth();
   const { showToast } = useToast();
@@ -26,12 +46,18 @@ export default function WorkspaceSettings() {
   const [state, setState] = useState(null);
   const [roles, setRoles] = useState([]);
   const [settings, setSettings] = useState(null);
+  const [pipeline, setPipeline] = useState([]);
+  const [fields, setFields] = useState([]);
+  const [newStage, setNewStage] = useState(EMPTY_STAGE);
+  const [newField, setNewField] = useState(EMPTY_FIELD);
   const [newRole, setNewRole] = useState({ name: '', permissions: ['crm.view'] });
   const [busy, setBusy] = useState('');
 
   const apply = useCallback((payload) => {
     setState(payload);
     setSettings(payload.settings);
+    setPipeline(payload.settings?.pipeline ?? []);
+    setFields(payload.settings?.customFields ?? []);
   }, []);
 
   const fetchAll = useCallback(async () => {
@@ -320,6 +346,379 @@ export default function WorkspaceSettings() {
           >
             <Save size={14} aria-hidden="true" />
             Save the ladder
+          </button>
+        </div>
+      </section>
+
+      <section className="card" style={{ marginBottom: '1.25rem' }}>
+        <span className="label-micro">Pipeline</span>
+        <h3 style={{ marginTop: '0.25rem' }}>The stages opportunities move through</h3>
+        <p className="hint">
+          Renaming keeps the stage&rsquo;s identity, so records follow it. A stage can be removed once
+          nothing is left in it; the save is refused with the count if it is still in use. Closed
+          stages stop the acknowledgement clock; a closed stage marked as won is what conversion and
+          revenue count.
+        </p>
+
+        <div className="table-wrap">
+          <table className="table">
+            <thead>
+              <tr>
+                <th scope="col">Stage</th>
+                <th scope="col">Required before entry</th>
+                <th scope="col">Closed</th>
+                <th scope="col">Won</th>
+                <th scope="col">Order</th>
+                <th scope="col" />
+              </tr>
+            </thead>
+            <tbody>
+              {pipeline.map((stage, index) => (
+                <tr key={stage.key || `new-${index}`}>
+                  <td>
+                    <input
+                      className="input"
+                      value={stage.label}
+                      disabled={!canManage}
+                      onChange={(event) =>
+                        setPipeline(
+                          pipeline.map((entry, position) =>
+                            position === index ? { ...entry, label: event.target.value } : entry,
+                          ),
+                        )
+                      }
+                    />
+                    <span className="hint">
+                      key: <code>{stage.key || '(generated from the label)'}</code>
+                    </span>
+                  </td>
+                  <td>
+                    <div className="btn-row" style={{ flexWrap: 'wrap', gap: '0.35rem' }}>
+                      {REQUIRABLE.map((field) => (
+                        <label key={field.key} className="hint" style={{ display: 'inline-flex', gap: '0.25rem' }}>
+                          <input
+                            type="checkbox"
+                            checked={(stage.required ?? []).includes(field.key)}
+                            disabled={!canManage}
+                            onChange={(event) =>
+                              setPipeline(
+                                pipeline.map((entry, position) =>
+                                  position === index
+                                    ? {
+                                        ...entry,
+                                        required: event.target.checked
+                                          ? [...(entry.required ?? []), field.key]
+                                          : (entry.required ?? []).filter((key) => key !== field.key),
+                                      }
+                                    : entry,
+                                ),
+                              )
+                            }
+                          />
+                          {field.label}
+                        </label>
+                      ))}
+                    </div>
+                  </td>
+                  <td>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(stage.isClosed)}
+                      disabled={!canManage}
+                      onChange={(event) =>
+                        setPipeline(
+                          pipeline.map((entry, position) =>
+                            position === index
+                              ? {
+                                  ...entry,
+                                  isClosed: event.target.checked,
+                                  isWon: event.target.checked ? Boolean(entry.isWon) : false,
+                                }
+                              : entry,
+                          ),
+                        )
+                      }
+                    />
+                  </td>
+                  <td>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(stage.isWon)}
+                      disabled={!canManage || !stage.isClosed}
+                      onChange={(event) =>
+                        setPipeline(
+                          pipeline.map((entry, position) =>
+                            position === index ? { ...entry, isWon: event.target.checked } : entry,
+                          ),
+                        )
+                      }
+                    />
+                  </td>
+                  <td>
+                    <div className="btn-row" style={{ gap: '0.2rem' }}>
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        disabled={!canManage || index === 0}
+                        onClick={() => {
+                          const next = [...pipeline];
+                          [next[index - 1], next[index]] = [next[index], next[index - 1]];
+                          setPipeline(next);
+                        }}
+                      >
+                        ↑
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        disabled={!canManage || index === pipeline.length - 1}
+                        onClick={() => {
+                          const next = [...pipeline];
+                          [next[index + 1], next[index]] = [next[index], next[index + 1]];
+                          setPipeline(next);
+                        }}
+                      >
+                        ↓
+                      </button>
+                    </div>
+                  </td>
+                  <td>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      disabled={!canManage || pipeline.length <= 1}
+                      onClick={() => setPipeline(pipeline.filter((_, position) => position !== index))}
+                    >
+                      <Trash size={14} aria-hidden="true" />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="btn-row" style={{ marginTop: '0.5rem', alignItems: 'center' }}>
+          <input
+            className="input"
+            style={{ maxWidth: 220 }}
+            placeholder="New stage name"
+            value={newStage.label}
+            disabled={!canManage}
+            onChange={(event) => setNewStage({ ...newStage, label: event.target.value })}
+          />
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            disabled={!canManage || newStage.label.trim().length < 2}
+            onClick={() => {
+              setPipeline([...pipeline, { ...newStage, label: newStage.label.trim(), key: '' }]);
+              setNewStage(EMPTY_STAGE);
+            }}
+          >
+            <Plus size={14} aria-hidden="true" />
+            Add stage
+          </button>
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            disabled={!canManage || busy === 'pipeline'}
+            onClick={() => run('pipeline', () => workspaceApi.updateSettings(token, { pipeline }), 'Pipeline saved')}
+          >
+            <Save size={14} aria-hidden="true" />
+            Save stages
+          </button>
+        </div>
+      </section>
+
+      <section className="card" style={{ marginBottom: '1.25rem' }}>
+        <span className="label-micro">Custom fields</span>
+        <h3 style={{ marginTop: '0.25rem' }}>Extra fields on every opportunity</h3>
+        <p className="hint">
+          These appear on the new-lead form and the lead page, and the server checks the type,
+          options and required flag on every save — a browser cannot bypass them.
+        </p>
+
+        <div className="table-wrap">
+          <table className="table">
+            <thead>
+              <tr>
+                <th scope="col">Label</th>
+                <th scope="col">Type</th>
+                <th scope="col">Options</th>
+                <th scope="col">Required</th>
+                <th scope="col" />
+              </tr>
+            </thead>
+            <tbody>
+              {fields.map((field, index) => (
+                <tr key={field.key || `field-${index}`}>
+                  <td>
+                    <input
+                      className="input"
+                      value={field.label}
+                      disabled={!canManage}
+                      onChange={(event) =>
+                        setFields(
+                          fields.map((entry, position) =>
+                            position === index ? { ...entry, label: event.target.value } : entry,
+                          ),
+                        )
+                      }
+                    />
+                    <span className="hint">
+                      key: <code>{field.key || '(generated from the label)'}</code>
+                    </span>
+                  </td>
+                  <td>
+                    <select
+                      className="select"
+                      value={field.type}
+                      disabled={!canManage}
+                      onChange={(event) =>
+                        setFields(
+                          fields.map((entry, position) =>
+                            position === index ? { ...entry, type: event.target.value } : entry,
+                          ),
+                        )
+                      }
+                    >
+                      {FIELD_TYPES.map((type) => (
+                        <option key={type.value} value={type.value}>
+                          {type.label}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                  <td>
+                    {field.type === 'dropdown' ? (
+                      <input
+                        className="input"
+                        placeholder="one, two, three"
+                        value={Array.isArray(field.options) ? field.options.join(', ') : field.options}
+                        disabled={!canManage}
+                        onChange={(event) =>
+                          setFields(
+                            fields.map((entry, position) =>
+                              position === index
+                                ? {
+                                    ...entry,
+                                    options: event.target.value
+                                      .split(',')
+                                      .map((option) => option.trim())
+                                      .filter(Boolean),
+                                  }
+                                : entry,
+                            ),
+                          )
+                        }
+                      />
+                    ) : (
+                      <span className="hint">—</span>
+                    )}
+                  </td>
+                  <td>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(field.required)}
+                      disabled={!canManage}
+                      onChange={(event) =>
+                        setFields(
+                          fields.map((entry, position) =>
+                            position === index ? { ...entry, required: event.target.checked } : entry,
+                          ),
+                        )
+                      }
+                    />
+                  </td>
+                  <td>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      disabled={!canManage}
+                      onClick={() => setFields(fields.filter((_, position) => position !== index))}
+                    >
+                      <Trash size={14} aria-hidden="true" />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="btn-row" style={{ marginTop: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+          <input
+            className="input"
+            style={{ maxWidth: 200 }}
+            placeholder="New field label"
+            value={newField.label}
+            disabled={!canManage}
+            onChange={(event) => setNewField({ ...newField, label: event.target.value })}
+          />
+          <select
+            className="select"
+            style={{ maxWidth: 140 }}
+            value={newField.type}
+            disabled={!canManage}
+            onChange={(event) => setNewField({ ...newField, type: event.target.value })}
+          >
+            {FIELD_TYPES.map((type) => (
+              <option key={type.value} value={type.value}>
+                {type.label}
+              </option>
+            ))}
+          </select>
+          {newField.type === 'dropdown' ? (
+            <input
+              className="input"
+              style={{ maxWidth: 200 }}
+              placeholder="one, two, three"
+              value={newField.options}
+              disabled={!canManage}
+              onChange={(event) => setNewField({ ...newField, options: event.target.value })}
+            />
+          ) : null}
+          <label className="hint" style={{ display: 'inline-flex', gap: '0.3rem' }}>
+            <input
+              type="checkbox"
+              checked={newField.required}
+              disabled={!canManage}
+              onChange={(event) => setNewField({ ...newField, required: event.target.checked })}
+            />
+            Required
+          </label>
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            disabled={!canManage || newField.label.trim().length < 2}
+            onClick={() => {
+              setFields([
+                ...fields,
+                {
+                  ...newField,
+                  label: newField.label.trim(),
+                  key: '',
+                  options:
+                    newField.type === 'dropdown'
+                      ? newField.options.split(',').map((option) => option.trim()).filter(Boolean)
+                      : [],
+                },
+              ]);
+              setNewField(EMPTY_FIELD);
+            }}
+          >
+            <Plus size={14} aria-hidden="true" />
+            Add field
+          </button>
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            disabled={!canManage || busy === 'fields'}
+            onClick={() => run('fields', () => workspaceApi.updateSettings(token, { customFields: fields }), 'Fields saved')}
+          >
+            <Save size={14} aria-hidden="true" />
+            Save fields
           </button>
         </div>
       </section>

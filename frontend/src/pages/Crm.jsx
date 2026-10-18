@@ -12,7 +12,7 @@ function formatMoney(value) {
   return `$${Number(value ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 }
 
-const EMPTY_FORM = { name: '', email: '', phone: '', source: 'manual', value: '', notes: '' };
+const EMPTY_FORM = { name: '', email: '', phone: '', source: 'manual', value: '', notes: '', fields: {} };
 
 export default function Crm() {
   const { token } = useAuth();
@@ -88,6 +88,7 @@ export default function Crm() {
         source: form.source,
         notes: form.notes,
         value: form.value === '' ? 0 : Number(form.value),
+        fields: form.fields ?? {},
       };
 
       const result = await crmApi.createLead(token, payload);
@@ -299,6 +300,55 @@ export default function Crm() {
                   onChange={(event) => setForm({ ...form, notes: event.target.value })}
                 />
               </div>
+
+              {(meta?.customFields ?? []).map((field) => {
+                const value = form.fields?.[field.key] ?? '';
+                const setValue = (next) =>
+                  setForm({ ...form, fields: { ...(form.fields ?? {}), [field.key]: next } });
+
+                return (
+                  <div className="field" key={field.key}>
+                    <label htmlFor={`cf-${field.key}`}>
+                      {field.label}
+                      {field.required ? ' *' : ''}
+                    </label>
+
+                    {field.type === 'dropdown' ? (
+                      <select
+                        id={`cf-${field.key}`}
+                        className="select"
+                        value={value}
+                        onChange={(event) => setValue(event.target.value)}
+                      >
+                        <option value="">—</option>
+                        {(field.options ?? []).map((option) => (
+                          <option key={option} value={option}>
+                            {option}
+                          </option>
+                        ))}
+                      </select>
+                    ) : field.type === 'checkbox' ? (
+                      <label className="hint" style={{ display: 'inline-flex', gap: '0.3rem' }}>
+                        <input
+                          id={`cf-${field.key}`}
+                          type="checkbox"
+                          checked={Boolean(value)}
+                          onChange={(event) => setValue(event.target.checked)}
+                        />
+                        Yes
+                      </label>
+                    ) : (
+                      <input
+                        id={`cf-${field.key}`}
+                        className="input"
+                        type={field.type === 'number' ? 'number' : field.type === 'date' ? 'date' : 'text'}
+                        value={value}
+                        onChange={(event) => setValue(event.target.value)}
+                      />
+                    )}
+                  </div>
+                );
+              })}
             </div>
 
             <div className="btn-row">

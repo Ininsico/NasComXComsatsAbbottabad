@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { record as audit } from '../lib/audit.js';
 import { requireAuth } from '../lib/auth.js';
 import { requirePermission, workspaceContext } from '../lib/context.js';
+import { db } from '../lib/db.js';
 import { describe, listMembers, membershipForUser, permissionsFor, removeMember, updateMember } from '../lib/members.js';
 import { LEVELS, LEVEL_LABELS, PERMISSIONS, outranks } from '../lib/permissions.js';
 import { createRole, findRole, listRoles, removeRole, updateRole } from '../lib/roles.js';
@@ -30,6 +31,45 @@ router.get('/', async (req, res) => {
 });
 
 router.put('/settings', requirePermission('assignment.manage'), async (req, res) => {
+  const current = await getSettings(req.workspace.id);
+
+  /**
+   * Deleting a stage is the one pipeline edit that can strand data. Every other edit —
+   * label, order, required fields, the closed/win flags — is safe, because the key stays
+   * the same. So the removal is checked against the records, and refused with the count
+   * instead of quietly orphaning opportunities into a stage the board no longer draws.
+   */
+  if (Array.isArray(req.body?.pipeline)) {
+    const nextKeys = new Set(
+      req.body.pipeline.map((stage) => String(stage.key ?? '').toLowerCase()).filter(Boolean),
+    );
+    const removed = current.pipeline.filter((stage) => !nextKeys.has(stage.key));
+
+    if (nextKeys.size === 0) {
+      return res.status(400).json({ error: 'A pipeline needs at least one stage' });
+    }
+
+    if (removed.length > 0) {
+      const rows = await db.collection('leads').where((lead) => lead.workspaceId === req.workspace.id);
+      const blocking = [];
+
+      for (const stage of removed) {
+        const used = rows.filter((lead) => lead.stage === stage.key).length;
+
+        if (used > 0) blocking.push({ key: stage.key, label: stage.label, count: used });
+      }
+
+      if (blocking.length > 0) {
+        const summary = blocking.map((entry) => `${entry.count} in "${entry.label}"`).join(', ');
+
+        return res.status(409).json({
+          error: `Move the opportunities out of these stages first: ${summary}.`,
+          stages: blocking,
+        });
+      }
+    }
+  }
+
   const settings = await saveSettings(req.workspace.id, req.body);
 
   await audit({
@@ -40,6 +80,8 @@ router.put('/settings', requirePermission('assignment.manage'), async (req, res)
       acknowledgeSeconds: settings.acknowledgeSeconds,
       escalation: settings.escalation,
       maxOpenLeads: settings.maxOpenLeads,
+      pipeline: settings.pipeline.map((stage) => stage.key),
+      customFields: settings.customFields.map((field) => field.key),
     },
   });
 
