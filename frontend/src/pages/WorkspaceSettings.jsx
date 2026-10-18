@@ -929,6 +929,7 @@ export default function WorkspaceSettings() {
                 <th scope="col">Backup</th>
                 <th scope="col">Available</th>
                 <th scope="col">Effective permissions</th>
+                <th scope="col">Alert routing</th>
               </tr>
             </thead>
             <tbody>
@@ -1021,6 +1022,43 @@ export default function WorkspaceSettings() {
                   </td>
                   <td>
                     <span className="hint">{member.permissions?.length ?? 0} of {catalog.length}</span>
+                  </td>
+                  <td>
+                    <details>
+                      <summary className="hint">where their alerts go</summary>
+                      <div style={{ display: 'grid', gap: '0.25rem', marginTop: '0.35rem', minWidth: 220 }}>
+                        {[
+                          ['telegramChatId', 'Telegram chat id'],
+                          ['slackWebhookUrl', 'Slack webhook'],
+                          ['webhookUrl', 'Webhook URL'],
+                        ].map(([key, label]) => (
+                          <input
+                            key={key}
+                            className="input"
+                            placeholder={label}
+                            defaultValue={member.notificationRouting?.[key] ?? ''}
+                            disabled={!canManage}
+                            onBlur={(event) => {
+                              const value = event.target.value.trim();
+
+                              if (value === (member.notificationRouting?.[key] ?? '')) return;
+
+                              void run(member.id, () =>
+                                workspaceApi.updateMember(token, member.id, {
+                                  notificationRouting: {
+                                    ...(member.notificationRouting ?? {}),
+                                    [key]: value,
+                                  },
+                                }),
+                              );
+                            }}
+                          />
+                        ))}
+                        <span className="hint">
+                          Empty falls back to the workspace channels. Telegram uses the workspace bot.
+                        </span>
+                      </div>
+                    </details>
                   </td>
                 </tr>
               ))}

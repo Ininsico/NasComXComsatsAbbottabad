@@ -314,7 +314,13 @@ export default function Integrations() {
           </span>
           <h3 style={{ marginTop: '0.25rem' }}>Appointment booking</h3>
 
-          {calendar.connected ? (
+          {calendar.needsReconnection ? (
+            <p className="alert alert--error">
+              <TriangleAlert size={15} aria-hidden="true" />
+              Google rejected the stored token{calendar.lastError ? ` (${calendar.lastError})` : ''}. Reconnect
+              to keep booking appointments — until then, booking is disabled with this reason.
+            </p>
+          ) : calendar.connected ? (
             <p className="alert alert--success">
               <CircleCheckBig size={15} aria-hidden="true" />
               Connected{calendar.account ? ` as ${calendar.account}` : ''}. Bookings check for conflicts
@@ -357,7 +363,9 @@ export default function Integrations() {
               >
                 Disconnect
               </button>
-            ) : (
+            ) : null}
+
+            {!calendar.connected || calendar.needsReconnection ? (
               <button
                 type="button"
                 className="btn btn-primary btn-sm"
@@ -365,9 +373,9 @@ export default function Integrations() {
                 onClick={connectGoogle}
               >
                 <ExternalLink size={14} aria-hidden="true" />
-                Connect Google
+                {calendar.needsReconnection ? 'Reconnect Google' : 'Connect Google'}
               </button>
-            )}
+            ) : null}
           </div>
 
           {calendar.history?.length ? (

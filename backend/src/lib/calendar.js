@@ -122,6 +122,9 @@ export async function saveTokens(workspaceId, tokens, account = null) {
       refreshToken: tokens.refresh_token ?? rows[index]?.refreshToken ?? null,
       expiry,
       account,
+      status: 'connected',
+      revokedAt: null,
+      lastError: null,
       connectedAt: rows[index]?.connectedAt ?? new Date().toISOString(),
       lastSyncAt: null,
       history: rows[index]?.history ?? [],
@@ -175,6 +178,21 @@ async function api(workspaceId, path, options = {}) {
   const payload = await response.json().catch(() => ({}));
 
   if (!response.ok) {
+    // A revoked grant looks like a 401. Record it on the connection so the integrations
+    // page can say "needs reconnection" instead of showing a healthy Google card over a
+    // token that will never work again.
+    if (response.status === 401) {
+      await integrations.mutate((rows) => {
+        const row = rows.find((entry) => entry.workspaceId === workspaceId && entry.provider === 'google');
+
+        if (!row) return;
+
+        row.status = 'needs_reconnection';
+        row.revokedAt = new Date().toISOString();
+        row.lastError = payload?.error?.message ?? 'the access token was rejected';
+      });
+    }
+
     throw new Error(payload?.error?.message || `Google Calendar answered ${response.status}`);
   }
 

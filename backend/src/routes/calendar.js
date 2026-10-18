@@ -145,6 +145,14 @@ router.post('/book', requirePermission('crm.edit'), async (req, res) => {
     return res.status(400).json({ error: 'The end must be after the start' });
   }
 
+  const connection = await connectionFor(req.workspace.id);
+
+  if (connection?.status === 'needs_reconnection') {
+    return res.status(409).json({
+      error: 'The Google Calendar connection needs reconnecting. Reconnect it on the Integrations page, then book again.',
+    });
+  }
+
   const settings = await getSettings(req.workspace.id);
 
   try {

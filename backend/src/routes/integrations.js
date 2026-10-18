@@ -33,6 +33,11 @@ router.get('/', requireAuth, workspaceContext, async (req, res) => {
       label: 'Google Calendar',
       configured: googleConfigured(),
       connected: Boolean(connection),
+      // A revoked grant shows as connected-but-needs-reconnection rather than a healthy card
+      // over a token that will never work again.
+      status: connection ? (connection.status ?? 'connected') : null,
+      needsReconnection: connection?.status === 'needs_reconnection',
+      lastError: connection?.lastError ?? null,
       account: connection?.account ?? null,
       connectedAt: connection?.connectedAt ?? null,
       lastSyncAt: connection?.lastSyncAt ?? null,
