@@ -8,11 +8,14 @@ import ScrollToTop from './components/ScrollToTop.jsx';
 import About from './pages/About.jsx';
 import Admin from './pages/Admin.jsx';
 import Contact from './pages/Contact.jsx';
+import Crm from './pages/Crm.jsx';
+import CrmLead from './pages/CrmLead.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import Deploy from './pages/Deploy.jsx';
 import Documents from './pages/Documents.jsx';
 import Features from './pages/Features.jsx';
 import Home from './pages/Home.jsx';
+import Integrations from './pages/Integrations.jsx';
 import Knowledge from './pages/Knowledge.jsx';
 import Login from './pages/Login.jsx';
 import NotFound from './pages/NotFound.jsx';
@@ -21,6 +24,7 @@ import Pricing from './pages/Pricing.jsx';
 import Profile from './pages/Profile.jsx';
 import Signup from './pages/Signup.jsx';
 import Voice from './pages/Voice.jsx';
+import WorkspaceSettings from './pages/WorkspaceSettings.jsx';
 import './App.css';
 
 export default function App() {
@@ -57,6 +61,10 @@ export default function App() {
             </ProtectedRoute>
           }
         >
+          <Route path="crm" element={<Crm />} />
+          <Route path="crm/:id" element={<CrmLead />} />
+          <Route path="integrations" element={<Integrations />} />
+          <Route path="settings" element={<WorkspaceSettings />} />
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="profile" element={<Profile />} />
           <Route path="knowledge" element={<Knowledge />} />

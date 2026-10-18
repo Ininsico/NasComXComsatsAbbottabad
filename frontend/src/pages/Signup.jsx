@@ -20,7 +20,7 @@ export default function Signup() {
   const [submitting, setSubmitting] = useState(false);
 
   if (user) {
-    return <Navigate to="/dashboard" replace />;
+    return <Navigate to="/crm" replace />;
   }
 
   const update = (field) => (event) =>
@@ -50,7 +50,7 @@ export default function Signup() {
         title: 'Account created',
         message: 'Your campus portal account is ready.',
       });
-      navigate('/dashboard', { replace: true });
+      navigate('/crm', { replace: true });
     } catch (signupError) {
       if (signupError instanceof ApiError && signupError.fields) {
         setFieldErrors(signupError.fields);
@@ -168,7 +168,7 @@ export default function Signup() {
           </div>
 
           <button type="submit" className="btn btn-primary btn-block" disabled={submitting}>
-            {submitting ? 'Creating account…' : 'Create account'}
+            {submitting ? 'Creating accountÃ¢â‚¬Â¦' : 'Create account'}
           </button>
         </form>
       </div>

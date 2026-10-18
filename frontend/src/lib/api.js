@@ -132,6 +132,68 @@ export const api = {
     request('/api/whatsapp/send', { method: 'POST', body: { to, text }, token }),
 };
 
+function query(params = {}) {
+  const search = new URLSearchParams();
+
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null && value !== '') search.set(key, value);
+  }
+
+  const string = search.toString();
+
+  return string ? `?${string}` : '';
+}
+
+/** The CRM workspace: pipeline, leads, activities, alerts and the audit log. */
+export const crmApi = {
+  meta: (token) => request('/api/crm/meta', { token }),
+  stats: (token) => request('/api/crm/stats', { token }),
+  leads: (token, params) => request(`/api/crm/leads${query(params)}`, { token }),
+  lead: (token, id) => request(`/api/crm/leads/${encodeURIComponent(id)}`, { token }),
+  createLead: (token, body) => request('/api/crm/leads', { method: 'POST', body, token }),
+  updateLead: (token, id, body) =>
+    request(`/api/crm/leads/${encodeURIComponent(id)}`, { method: 'PATCH', body, token }),
+  deleteLead: (token, id) =>
+    request(`/api/crm/leads/${encodeURIComponent(id)}`, { method: 'DELETE', token }),
+  acknowledge: (token, id) =>
+    request(`/api/crm/leads/${encodeURIComponent(id)}/acknowledge`, { method: 'POST', token }),
+  assign: (token, id, memberId) =>
+    request(`/api/crm/leads/${encodeURIComponent(id)}/assign`, {
+      method: 'POST',
+      body: { memberId },
+      token,
+    }),
+  escalate: (token) => request('/api/crm/escalate', { method: 'POST', token }),
+  activities: (token, leadId) =>
+    request(`/api/crm/activities${query({ leadId })}`, { token }),
+  addActivity: (token, body) =>
+    request('/api/crm/activities', { method: 'POST', body, token }),
+  alerts: (token) => request('/api/crm/alerts', { token }),
+  audit: (token) => request('/api/crm/audit', { token }),
+};
+
+/** Workspace administration: settings, members and configurable roles. */
+export const workspaceApi = {
+  get: (token) => request('/api/workspace', { token }),
+  updateSettings: (token, body) =>
+    request('/api/workspace/settings', { method: 'PUT', body, token }),
+  members: (token) => request('/api/workspace/members', { token }),
+  updateMember: (token, id, body) =>
+    request(`/api/workspace/members/${encodeURIComponent(id)}`, { method: 'PATCH', body, token }),
+  removeMember: (token, id) =>
+    request(`/api/workspace/members/${encodeURIComponent(id)}`, { method: 'DELETE', token }),
+  roles: (token) => request('/api/workspace/roles', { token }),
+};
+
+/** Google Calendar: status, the consent URL and appointment booking. */
+export const calendarApi = {
+  status: (token) => request('/api/calendar/status', { token }),
+  authorize: (token) => request('/api/calendar/authorize', { token }),
+  busy: (token, start, end) => request(`/api/calendar/busy${query({ start, end })}`, { token }),
+  book: (token, body) => request('/api/calendar/book', { method: 'POST', body, token }),
+  disconnect: (token) => request('/api/calendar/connection', { method: 'DELETE', token }),
+};
+
 /** Which STT model, TTS engine and VAD settings the Python service is using. */
 export async function voiceHealth() {
   const response = await fetch(`${VOICE_BASE_URL}/voice/health`);

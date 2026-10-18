@@ -4,11 +4,14 @@ import {
   ChevronsRight,
   Database,
   FileText,
+  Kanban,
   LayoutDashboard,
   LogOut,
   ShieldCheck,
   UserRound,
   Wallet,
+  Wrench,
+  Zap,
 } from 'lucide-react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/authContext.js';
@@ -16,7 +19,10 @@ import { useToast } from '../context/toastContext.js';
 import { ADMIN_ROLE, ROLE_LABELS } from '../data/site.js';
 
 const PORTAL_LINKS = [
+  { to: '/crm', label: 'Pipeline', icon: Kanban },
   { to: '/dashboard', label: 'Overview', icon: LayoutDashboard },
+  { to: '/integrations', label: 'Integrations', icon: Zap },
+  { to: '/settings', label: 'Workspace', icon: Wrench },
   { to: '/voice', label: 'Voice', icon: AudioLines },
   { to: '/profile', label: 'My profile', icon: UserRound },
   { to: '/knowledge', label: 'Knowledge', icon: Database },
@@ -26,6 +32,9 @@ const PORTAL_LINKS = [
 
 /** Admins land on the console, so Overview would only bounce them there. */
 const ADMIN_PORTAL_LINKS = [
+  { to: '/crm', label: 'Pipeline', icon: Kanban },
+  { to: '/integrations', label: 'Integrations', icon: Zap },
+  { to: '/settings', label: 'Workspace', icon: Wrench },
   { to: '/voice', label: 'Voice', icon: AudioLines },
   { to: '/profile', label: 'My profile', icon: UserRound },
   { to: '/knowledge', label: 'Knowledge', icon: Database },

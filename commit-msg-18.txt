@@ -1,0 +1,27 @@
+﻿Link the CRM workspace into the app
+
+The engine from the previous commit was only reachable over HTTP. This wires it
+into the signed-in app as four real pages.
+
+- /crm: pipeline board, one column per stage, with a live per-lead
+  acknowledgement countdown, escalation badges, KPI tiles and an inline
+  create-lead form. Polls every 5s so an escalation appears without a reload.
+- /crm/:id: lead detail — acknowledge, move stage, reassign, record activity,
+  and book a Google Calendar appointment with conflict checking.
+- /integrations: Google Calendar connect/disconnect plus the real redirect URI to
+  register, alert channel configuration (webhook/Slack/Telegram), and the alert
+  attempt history including "skipped" runs.
+- /settings: acknowledgement window, per-member open-lead limits, the escalation
+  ladder as absolute offsets from the deadline, and member availability.
+
+Signing in now lands on the pipeline instead of the old dashboard, and the
+sidebar carries Pipeline, Integrations and Workspace for every role.
+
+Also fixes the demo seeder: it re-applied its default settings on every boot,
+which would silently undo anything configured on the settings page. It now only
+seeds when no settings row exists.
+
+Verified: eslint clean, production build clean, 33/33 backend tests, and 13/13
+checks against the live API for every endpoint these pages call.
+
+Co-authored-by: CommandCodeBot <noreply@commandcode.ai>

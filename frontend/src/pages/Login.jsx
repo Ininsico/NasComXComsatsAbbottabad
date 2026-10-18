@@ -46,7 +46,7 @@ export default function Login() {
   const demoDataMissing =
     apiStatus === 'ok' && demoAccounts && demoAccounts.expected && demoAccounts.present < demoAccounts.expected;
 
-  const redirectTo = location.state?.from ?? '/dashboard';
+  const redirectTo = location.state?.from ?? '/crm';
 
   if (user) {
     return <Navigate to={redirectTo} replace />;
@@ -122,9 +122,9 @@ export default function Login() {
             {apiStatus === 'down'
               ? 'API unreachable'
               : apiStatus === 'checking'
-                ? 'Checking API…'
+                ? 'Checking APIâ€¦'
                 : demoAccounts
-                  ? `API connected · ${demoAccounts.present}/${demoAccounts.expected} demo accounts`
+                  ? `API connected Â· ${demoAccounts.present}/${demoAccounts.expected} demo accounts`
                   : 'API connected'}
           </span>
           <span className="api-status__url">{API_BASE_URL}</span>
@@ -133,7 +133,7 @@ export default function Login() {
         {demoDataMissing ? (
           <p className="alert alert--pending" style={{ marginBottom: '1rem' }}>
             <Info size={15} aria-hidden="true" />
-            This backend has no demo accounts yet. Restart it — running the API seeds them on boot —
+            This backend has no demo accounts yet. Restart it â€” running the API seeds them on boot â€”
             or run <code>npm --prefix backend run seed</code>.
           </p>
         ) : null}
@@ -147,10 +147,10 @@ export default function Login() {
             onChange={handleInstantLogin}
             disabled={submitting}
           >
-            <option value="">Choose an account to sign in with…</option>
+            <option value="">Choose an account to sign in withâ€¦</option>
             {DEMO_ACCOUNTS.map((account) => (
               <option key={account.email} value={account.email}>
-                {account.label} — {account.summary}
+                {account.label} â€” {account.summary}
               </option>
             ))}
           </select>
@@ -206,7 +206,7 @@ export default function Login() {
           </div>
 
           <button type="submit" className="btn btn-primary btn-block" disabled={submitting}>
-            {submitting ? 'Signing in…' : 'Sign in'}
+            {submitting ? 'Signing inâ€¦' : 'Sign in'}
           </button>
         </form>
       </div>

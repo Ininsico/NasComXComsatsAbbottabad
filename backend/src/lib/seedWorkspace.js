@@ -1,7 +1,7 @@
 import { findUserByEmail } from './store.js';
 import { addMemberIfAbsent, ensureWorkspaceForUser } from './context.js';
 import { db } from './db.js';
-import { saveSettings } from './settings.js';
+import { getSettings, saveSettings } from './settings.js';
 
 /**
  * A demo workspace that is already populated, so the assignment and escalation rules
@@ -53,17 +53,25 @@ export async function seedDemoWorkspace() {
     if (!before) added += 1;
   }
 
-  const settings = await saveSettings(workspace.id, {
-    publicIntake: true,
-    acknowledgeSeconds: 45,
-    maxOpenLeads: 4,
-    timezone: 'Asia/Karachi',
-    escalation: [
-      { afterSeconds: 30, to: 'next' },
-      { afterSeconds: 60, to: 'backup' },
-      { afterSeconds: 120, to: 'manager' },
-    ],
-  });
+  // Only seed the settings once. Re-applying them on every boot would silently undo
+  // whatever the team configured in the workspace settings page.
+  const existingSettings = await db
+    .collection('workspace-settings')
+    .find((row) => row.workspaceId === workspace.id);
+
+  const settings = existingSettings
+    ? await getSettings(workspace.id)
+    : await saveSettings(workspace.id, {
+        publicIntake: true,
+        acknowledgeSeconds: 45,
+        maxOpenLeads: 4,
+        timezone: 'Asia/Karachi',
+        escalation: [
+          { afterSeconds: 30, to: 'next' },
+          { afterSeconds: 60, to: 'backup' },
+          { afterSeconds: 120, to: 'manager' },
+        ],
+      });
 
   return { workspace, members: added, acknowledgeSeconds: settings.acknowledgeSeconds };
 }
