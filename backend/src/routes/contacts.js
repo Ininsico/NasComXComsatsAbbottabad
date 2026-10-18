@@ -12,7 +12,7 @@ import {
   updateContact,
 } from '../lib/contacts.js';
 import { findCompany, listCompanies } from '../lib/companies.js';
-import { listLeads } from '../lib/leads.js';
+import { listActivities, listLeads } from '../lib/leads.js';
 import { maskValues } from '../lib/permissions.js';
 
 const router = Router();
@@ -85,25 +85,29 @@ router.post('/', requirePermission('crm.create'), async (req, res) => {
   return res.status(201).json({ contact: result.contact });
 });
 
-/** One contact, fully: the company, the opportunities, and the messaging state. */
+/** One contact, fully: the company, the opportunities, the messaging state and the history. */
 router.get('/:id', requirePermission('crm.view'), async (req, res) => {
   const contact = await findContact(req.params.id, req.workspace.id);
 
   if (!contact) return res.status(404).json({ error: 'No such contact' });
 
-  const [company, opportunities] = await Promise.all([
-    contact.companyId
-      ? findCompany(contact.companyId, req.workspace.id)
-      : Promise.resolve(null),
+  const [company, opportunities, activities] = await Promise.all([
+    contact.companyId ? findCompany(contact.companyId, req.workspace.id) : Promise.resolve(null),
     listLeads(req.workspace.id, {}),
+    listActivities(req.workspace.id, { limit: 200 }),
   ]);
 
-  const theirOpportunities = maskValues(
-    opportunities.filter((lead) => lead.contactId === contact.id),
-    req.permissions,
-  );
+  const theirs = opportunities.filter((lead) => lead.contactId === contact.id);
+  const leadIds = new Set(theirs.map((lead) => lead.id));
+  const history = activities.filter((entry) => leadIds.has(entry.leadId));
 
-  res.json({ contact, company, opportunities: theirOpportunities });
+  res.json({
+    contact,
+    company,
+    opportunities: maskValues(theirs, req.permissions),
+    // The contact's full history: every activity across every opportunity they hold.
+    activities: history,
+  });
 });
 
 router.patch('/:id', requirePermission('crm.edit'), async (req, res) => {

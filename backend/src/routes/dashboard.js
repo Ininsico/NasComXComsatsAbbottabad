@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { listAppointments, upcoming } from '../lib/appointments.js';
 import { requireAuth } from '../lib/auth.js';
 import { workspaceContext } from '../lib/context.js';
-import { leadStats } from '../lib/leads.js';
+import { leadStats, recoveryQueue } from '../lib/leads.js';
 import { listIntents } from '../lib/payments.js';
 import { canSeeValue, maskValues } from '../lib/permissions.js';
 import { entitlementsFor } from '../lib/subscriptions.js';
@@ -27,11 +27,12 @@ router.get('/', async (req, res) => {
   const personal = req.member.level === 'user';
   const scope = personal ? { assigneeId: req.member.id } : {};
 
-  const [stats, intents, entitlements, appointments] = await Promise.all([
+  const [stats, intents, entitlements, appointments, recovery] = await Promise.all([
     leadStats(workspaceId, scope),
     listIntents(),
     entitlementsFor(workspaceId),
     listAppointments(workspaceId),
+    recoveryQueue(workspaceId),
   ]);
 
   const mine = intents.filter((intent) => intent.workspaceId === workspaceId);
@@ -116,6 +117,12 @@ router.get('/', async (req, res) => {
       upcoming: upcoming(appointments),
       total: appointments.length,
     },
+    // The red alerts, visible in the app as well as by email: opportunities past their
+    // acknowledgement deadline, worst first. This is the same data the alert centre uses.
+    redAlerts: maskValues(
+      (recovery.items ?? []).filter((item) => item.overdueSeconds > 0).slice(0, 5),
+      req.permissions,
+    ),
     recentLeads: maskValues(stats.recentLeads, req.permissions),
     recentActivities: stats.recentActivities,
   });

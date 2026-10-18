@@ -28,6 +28,16 @@ export async function membershipForUser(userId) {
   return members.find((member) => member.userId === userId);
 }
 
+/** The named availability states the spec distinguishes. Only `available` takes new work. */
+export const MEMBER_STATUSES = ['available', 'busy', 'on_leave', 'offline'];
+
+export const MEMBER_STATUS_LABELS = {
+  available: 'Available',
+  busy: 'Busy',
+  on_leave: 'On leave',
+  offline: 'Offline',
+};
+
 export async function createMember({
   workspaceId,
   userId,
@@ -49,6 +59,7 @@ export async function createMember({
     revoked: [],
     openLeadLimit,
     backup,
+    status: 'available',
     available: true,
     createdAt: new Date().toISOString(),
   });
@@ -65,7 +76,21 @@ export async function updateMember(id, workspaceId, patch) {
     if (patch.openLeadLimit !== undefined) {
       member.openLeadLimit = patch.openLeadLimit === null ? null : Number(patch.openLeadLimit);
     }
-    if (patch.available !== undefined) member.available = Boolean(patch.available);
+
+    // The named status is the source of truth; `available` is derived from it so the
+    // assignment engine keeps its single boolean check. Busy, On leave and Offline all
+    // stop new work, and any move off Available immediately hands over their open leads
+    // (the route does that part).
+    if (patch.status !== undefined && MEMBER_STATUSES.includes(patch.status)) {
+      member.status = patch.status;
+      member.available = patch.status === 'available';
+    }
+
+    if (patch.available !== undefined && patch.status === undefined) {
+      member.available = Boolean(patch.available);
+      member.status = member.available ? 'available' : 'offline';
+    }
+
     if (patch.backup !== undefined) member.backup = Boolean(patch.backup);
     if (Array.isArray(patch.granted)) member.granted = patch.granted;
     if (Array.isArray(patch.revoked)) member.revoked = patch.revoked;
@@ -110,6 +135,8 @@ export async function permissionsFor(member) {
 export function describe(member, permissions) {
   return {
     ...member,
+    status: member.status ?? (member.available === false ? 'offline' : 'available'),
+    statusLabel: MEMBER_STATUS_LABELS[member.status ?? (member.available === false ? 'offline' : 'available')],
     levelLabel: LEVEL_LABELS[member.level] ?? member.level,
     permissions,
   };

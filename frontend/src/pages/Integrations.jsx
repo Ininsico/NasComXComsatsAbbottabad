@@ -14,7 +14,7 @@ import {
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../context/authContext.js';
 import { useToast } from '../context/toastContext.js';
-import { api, calendarApi, integrationsApi, workspaceApi } from '../lib/api.js';
+import { api, calendarApi, crmApi, integrationsApi, workspaceApi } from '../lib/api.js';
 
 const WHATSAPP_TONES = {
   ready: ['pill--done', 'Connected'],
@@ -474,6 +474,39 @@ export default function Integrations() {
 
             <button type="submit" className="btn btn-primary" disabled={busy === 'channels'}>
               Save channels
+            </button>
+
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={busy === 'test'}
+              onClick={async () => {
+                setBusy('test');
+
+                try {
+                  const result = await crmApi.testAlert(token);
+                  const sent = (result.attempts ?? []).filter((attempt) => attempt.status === 'sent');
+                  const failed = (result.attempts ?? []).filter((attempt) => attempt.status === 'failed');
+
+                  showToast({
+                    tone: sent.length > 0 ? 'success' : 'error',
+                    title: sent.length > 0 ? `Test alert sent (${sent.length} channel(s))` : 'The test alert did not send',
+                    message:
+                      failed.length > 0
+                        ? failed.map((attempt) => `${attempt.channel}: ${attempt.error}`).join(' · ')
+                        : `Channels: ${(result.attempts ?? []).map((attempt) => attempt.channel).join(', ') || 'none configured'}`,
+                  });
+
+                  await refresh();
+                } catch (testError) {
+                  showToast({ tone: 'error', title: 'Could not send the test', message: testError.message });
+                } finally {
+                  setBusy('');
+                }
+              }}
+            >
+              <Send size={14} aria-hidden="true" />
+              {busy === 'test' ? 'Sending…' : 'Send a test alert'}
             </button>
           </form>
         </article>

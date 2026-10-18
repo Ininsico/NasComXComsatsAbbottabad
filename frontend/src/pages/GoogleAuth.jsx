@@ -38,7 +38,7 @@ export default function GoogleAuth() {
     return () => clearTimeout(timer);
   }, [result.token, adoptToken]);
 
-  if (user) return <Navigate to="/crm" replace />;
+  if (user) return <Navigate to="/dashboard" replace />;
 
   if (result.error) {
     return (

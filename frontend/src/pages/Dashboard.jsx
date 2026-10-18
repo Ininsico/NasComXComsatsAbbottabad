@@ -3,6 +3,7 @@ import {
   ArrowRight,
   Clock,
   ShieldAlert,
+  ShieldCheck,
   TrendingUp,
   TriangleAlert,
   Users,
@@ -42,7 +43,7 @@ function duration(seconds) {
 }
 
 export default function Dashboard() {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const { showToast } = useToast();
 
   const [data, setData] = useState(null);
@@ -132,6 +133,37 @@ export default function Dashboard() {
           Saved in this browser.
         </p>
       </details>
+
+      {user?.role === 'admin' ? (
+        <p className="alert alert--info">
+          <ShieldCheck size={15} aria-hidden="true" />
+          You are signed in as a <strong>system administrator</strong>. This screen is the workspace
+          view; <Link to="/admin">open system administration</Link> for accounts, services and storage.
+        </p>
+      ) : null}
+
+      {data.redAlerts?.length ? (
+        <section className="alert alert--error" style={{ alignItems: 'flex-start' }}>
+          <TriangleAlert size={16} aria-hidden="true" />
+          <div>
+            <strong>
+              {data.redAlerts.length} red alert(s) — past the acknowledgement deadline
+            </strong>
+            <ul className="stack" style={{ margin: '0.35rem 0 0', paddingLeft: '1.1rem' }}>
+              {data.redAlerts.map((alert) => (
+                <li key={alert.id}>
+                  <Link to={`/crm/${alert.id}`}>{alert.name}</Link> — {alert.overdueSeconds}s overdue
+                  {alert.assigneeName ? `, owned by ${alert.assigneeName}` : ''}
+                </li>
+              ))}
+            </ul>
+            <span className="hint">
+              Each escalation also goes out by email and the configured channels; the attempt log is
+              on Integrations.
+            </span>
+          </div>
+        </section>
+      ) : null}
 
       <section className="metric-grid" style={{ marginBottom: '1.25rem' }}>
         <Link className="metric-tile" to="/crm">

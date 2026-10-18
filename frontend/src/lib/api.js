@@ -78,9 +78,14 @@ export const api = {
   googleInfo: () => request('/api/auth/google-info'),
   /** The administrator instant-login button. 404s when it is not enabled. */
   instantLoginInfo: () => request('/api/auth/instant-login'),
-  instantLogin: () => request('/api/auth/instant-login', { method: 'POST' }),
+  instantLogin: (role) =>
+    request('/api/auth/instant-login', { method: 'POST', body: role ? { role } : undefined }),
   adminOverview: (token) => request('/api/admin/overview', { token }),
   adminMetrics: (token) => request('/api/admin/metrics', { token }),
+  adminUsers: (token) => request('/api/admin/users', { token }),
+  adminCreateUser: (token, body) => request('/api/admin/users', { method: 'POST', body, token }),
+  adminUpdateUser: (token, id, body) =>
+    request(`/api/admin/users/${encodeURIComponent(id)}`, { method: 'PATCH', body, token }),
 
   // Public: the marketing site's demo form writes straight into the CRM pipeline.
   demoRequest: (payload) => request('/api/crm/demo-request', { method: 'POST', body: payload }),
@@ -170,6 +175,7 @@ export const crmApi = {
   addActivity: (token, body) =>
     request('/api/crm/activities', { method: 'POST', body, token }),
   alerts: (token) => request('/api/crm/alerts', { token }),
+  testAlert: (token) => request('/api/crm/alerts/test', { method: 'POST', token }),
   audit: (token, params) => request(`/api/crm/audit${query(params)}`, { token }),
   lists: (token) => request('/api/crm/lists', { token }),
   createList: (token, body) => request('/api/crm/lists', { method: 'POST', body, token }),

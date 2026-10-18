@@ -46,30 +46,68 @@ router.get('/google-info', (req, res) => {
 });
 
 /**
- * Whether the sign-in page should offer the administrator button.
+ * Whether the sign-in page should offer instant logins, and for which roles.
  *
- * Deliberately reports only that it is available and which account it signs into — never
- * the password. Both routes answer 404 when INSTANT_LOGIN is off, so a normal deployment
- * has no such endpoint at all.
+ * Reports only that they are available and which account each button signs into — never a
+ * password. Answers 404 when INSTANT_LOGIN is off, so a normal deployment has no such
+ * endpoint at all.
  */
 router.get('/instant-login', async (req, res) => {
   if (!config.instantLogin.enabled) {
     return res.status(404).json({ error: 'Instant login is not enabled on this deployment' });
   }
 
-  const admin = await findUserByEmail(config.instantLogin.adminEmail);
+  const { INSTANT_ROLES, findInstantUser } = await import('../lib/instantLogins.js');
 
-  if (!admin) {
-    return res.status(404).json({ error: 'The bootstrap administrator has not been created yet' });
+  const roles = [];
+
+  for (const definition of INSTANT_ROLES) {
+    const found = await findInstantUser(definition.role);
+
+    if (found) {
+      roles.push({
+        role: definition.role,
+        label: definition.label,
+        summary: definition.summary,
+        name: found.user.name,
+        email: found.user.email,
+      });
+    }
   }
 
-  return res.json({ available: true, email: admin.email, name: admin.name });
+  const admin = await findUserByEmail(config.instantLogin.adminEmail);
+
+  if (roles.length === 0 && !admin) {
+    return res.status(404).json({ error: 'No instant-login accounts have been created yet' });
+  }
+
+  return res.json({
+    available: true,
+    roles,
+    systemAdmin: admin ? { email: admin.email, name: admin.name } : null,
+  });
 });
 
-/** One click, no password. Only ever signs into the configured bootstrap administrator. */
+/**
+ * One click, no password. With a `role`, signs into that role's demo account in the shared
+ * Instant Demo workspace; without one, into the configured system administrator.
+ */
 router.post('/instant-login', async (req, res) => {
   if (!config.instantLogin.enabled) {
     return res.status(404).json({ error: 'Instant login is not enabled on this deployment' });
+  }
+
+  const role = String(req.body?.role ?? '').trim();
+
+  if (role) {
+    const { findInstantUser } = await import('../lib/instantLogins.js');
+    const found = await findInstantUser(role);
+
+    if (!found) {
+      return res.status(404).json({ error: `No instant-login account for role "${role}"` });
+    }
+
+    return res.json({ token: issueToken(found.user), user: toPublicUser(found.user) });
   }
 
   const admin = await findUserByEmail(config.instantLogin.adminEmail);

@@ -39,6 +39,14 @@ const FIELD_TYPES = [
 const EMPTY_STAGE = { key: '', label: '', required: [], isClosed: false, isWon: false };
 const EMPTY_FIELD = { key: '', label: '', type: 'text', options: '', required: false };
 
+/** The named availability states; only Available takes new work, the rest reassign it. */
+const MEMBER_STATUSES = [
+  ['available', 'Available'],
+  ['busy', 'Busy'],
+  ['on_leave', 'On leave'],
+  ['offline', 'Offline'],
+];
+
 export default function WorkspaceSettings() {
   const { token } = useAuth();
   const { showToast } = useToast();
@@ -927,7 +935,7 @@ export default function WorkspaceSettings() {
                 <th scope="col">Role</th>
                 <th scope="col">Open limit</th>
                 <th scope="col">Backup</th>
-                <th scope="col">Available</th>
+                <th scope="col">Status</th>
                 <th scope="col">Effective permissions</th>
                 <th scope="col">Alert routing</th>
               </tr>
@@ -1009,16 +1017,24 @@ export default function WorkspaceSettings() {
                     />
                   </td>
                   <td>
-                    <input
-                      type="checkbox"
-                      checked={Boolean(member.available)}
+                    <select
+                      className="select"
+                      value={member.status ?? (member.available === false ? 'offline' : 'available')}
                       disabled={!canManage}
                       onChange={(event) =>
-                        run(member.id, () =>
-                          workspaceApi.updateMember(token, member.id, { available: event.target.checked }),
+                        run(
+                          member.id,
+                          () => workspaceApi.updateMember(token, member.id, { status: event.target.value }),
+                          'Status updated — their unanswered leads were reassigned',
                         )
                       }
-                    />
+                    >
+                      {MEMBER_STATUSES.map(([value, label]) => (
+                        <option key={value} value={value}>
+                          {label}
+                        </option>
+                      ))}
+                    </select>
                   </td>
                   <td>
                     <span className="hint">{member.permissions?.length ?? 0} of {catalog.length}</span>
@@ -1067,8 +1083,9 @@ export default function WorkspaceSettings() {
         </div>
 
         <p className="hint">
-          Round-robin only considers available members under their limit. Setting someone
-          unavailable stops new work reaching them.
+          Round-robin only considers Available members under their limit. Setting someone Busy,
+          On leave or Offline immediately reassigns their unacknowledged leads — acknowledged ones
+          stay with them.
         </p>
       </section>
     </>

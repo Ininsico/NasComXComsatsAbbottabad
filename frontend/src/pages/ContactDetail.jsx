@@ -86,6 +86,7 @@ export default function ContactDetail() {
   if (!state) return <p className="hint">Loading contact…</p>;
 
   const { contact, company, opportunities } = state;
+  const activities = state.activities ?? [];
 
   return (
     <>
@@ -196,6 +197,31 @@ export default function ContactDetail() {
                   {message.status && message.status !== 'received' ? `· ${message.status}` : ''}
                 </span>
                 <p>{message.body}</p>
+
+                {message.direction === 'outbound' && message.status === 'failed' ? (
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={async () => {
+                      try {
+                        await messagesApi.send(token, {
+                          contactId: contact.id,
+                          leadId: message.leadId ?? undefined,
+                          body: message.body,
+                        });
+
+                        const { messagePayload } = await fetchAll();
+
+                        setMessages(messagePayload.messages ?? []);
+                        showToast({ tone: 'success', title: 'Message retried' });
+                      } catch (retryError) {
+                        showToast({ tone: 'error', title: 'Still failing', message: retryError.message });
+                      }
+                    }}
+                  >
+                    Retry this message
+                  </button>
+                ) : null}
               </li>
             ))}
           </ul>
@@ -224,6 +250,28 @@ export default function ContactDetail() {
           </button>
           {!contact.phone ? <p className="hint">Add a phone number to reply on WhatsApp.</p> : null}
         </form>
+      </section>
+      <section className="dash-section">
+        <h2 className="dash-section__title">History</h2>
+        <p className="hint">
+          Every recorded action across this person's opportunities, newest first — the same trail
+          the lead page shows, merged here so the contact is the whole story.
+        </p>
+
+        {activities.length === 0 ? (
+          <p className="hint">Nothing recorded yet.</p>
+        ) : (
+          <ul className="voice-log">
+            {activities.slice(0, 50).map((entry, index) => (
+              <li className="voice-turn" key={entry.id ?? index}>
+                <span className="label-micro">
+                  {entry.kind} · {entry.by} · {new Date(entry.at).toLocaleString()}
+                </span>
+                <p>{entry.summary}</p>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
     </>
   );

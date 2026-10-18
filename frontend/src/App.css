@@ -1893,6 +1893,49 @@
   }
 }
 
+/* Instant role logins ---------------------------------------------------- */
+
+.instant-login {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+  margin-bottom: 0.6rem;
+}
+
+.instant-login__button {
+  display: grid;
+  gap: 0.15rem;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: var(--r-xl, 0.75rem);
+  background: var(--surface);
+  text-align: left;
+  cursor: pointer;
+  transition: all 200ms ease;
+}
+
+.instant-login__button:hover:not(:disabled) {
+  border-color: var(--blue-300, #93c5fd);
+  box-shadow: var(--shadow-card);
+}
+
+.instant-login__button:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.instant-login__button strong {
+  font-size: 0.8125rem;
+  color: var(--slate-900, #0f172a);
+}
+
+.instant-login__button em {
+  font-style: normal;
+  font-size: 0.7rem;
+  line-height: 1.35;
+  color: var(--slate-600);
+}
+
 /* The redirect-URI help, folded away until someone needs it. */
 .google-setup {
   margin-top: 0.75rem;

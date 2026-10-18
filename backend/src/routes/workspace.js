@@ -191,11 +191,13 @@ router.patch('/members/:id', requirePermission('assignment.manage'), async (req,
 
   const updated = await updateMember(target.id, req.workspace.id, req.body ?? {});
 
-  // Going unavailable is a promise to the customer: their unanswered leads are handed over
-  // now, not at the next escalation tick.
+  // Going off Available — Busy, On leave or Offline, or the legacy boolean — is a promise to
+  // the customer: their unanswered leads are handed over now, not at the next escalation tick.
   let reassigned = [];
+  const wentUnavailable =
+    (req.body?.status !== undefined && req.body.status !== 'available') || req.body?.available === false;
 
-  if (req.body?.available === false) {
+  if (wentUnavailable) {
     const { reassignUnacknowledged } = await import('../lib/leads.js');
 
     reassigned = await reassignUnacknowledged({

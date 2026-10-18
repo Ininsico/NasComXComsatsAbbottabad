@@ -1,11 +1,13 @@
 import { Router } from 'express';
+import { randomUUID } from 'node:crypto';
 import { config } from '../config.js';
-import { requireAuth, requireRole } from '../lib/auth.js';
+import { hashPassword, requireAuth, requireRole } from '../lib/auth.js';
+import { ensureWorkspaceForUser } from '../lib/context.js';
 import { db } from '../lib/db.js';
 import { listDocuments } from '../lib/documents.js';
 import { loadPortfolio } from '../lib/portfolio.js';
 import { monitoringSnapshot } from '../lib/prometheus.js';
-import { listUsers } from '../lib/store.js';
+import { createUser, findUserByEmail, listUsers, toPublicUser, updateUser } from '../lib/store.js';
 
 const router = Router();
 
@@ -30,6 +32,93 @@ router.get('/metrics', async (req, res) => {
   } catch (error) {
     return res.status(503).json({ available: false, reason: error.message, series: {}, instant: {} });
   }
+});
+
+/**
+ * People. The platform console is where accounts are created and their role is set — a
+ * workspace owner invites people to a workspace, but only the operator of the deployment
+ * decides who exists at all.
+ *
+ * Passwords are never returned from this list; a new account's generated password is shown
+ * once, at creation, because the operator has to hand it over.
+ */
+router.get('/users', async (req, res) => {
+  const [users, members, workspaces] = await Promise.all([
+    listUsers(),
+    db.collection('members').read(),
+    db.collection('workspaces').read(),
+  ]);
+
+  const workspaceName = new Map(workspaces.map((workspace) => [workspace.id, workspace.name]));
+  const membership = new Map(members.map((member) => [member.userId, member]));
+
+  res.json({
+    users: users
+      .map((user) => {
+        const join = membership.get(user.id);
+        const { passwordHash, ...rest } = user;
+
+        return {
+          ...rest,
+          passwordSet: Boolean(passwordHash),
+          member: join
+            ? {
+                level: join.level,
+                status: join.status ?? (join.available === false ? 'offline' : 'available'),
+                workspaceName: workspaceName.get(join.workspaceId) ?? null,
+              }
+            : null,
+        };
+      })
+      .sort((a, b) => a.email.localeCompare(b.email)),
+    roles: ['admin', 'user'],
+  });
+});
+
+router.post('/users', async (req, res) => {
+  const name = String(req.body?.name ?? '').trim();
+  const email = String(req.body?.email ?? '').trim().toLowerCase();
+  const role = req.body?.role === 'admin' ? 'admin' : 'user';
+  const generated = req.body?.password ? null : `Nx-${randomUUID().replace(/-/g, '').slice(0, 14)}`;
+  const password = String(req.body?.password ?? generated);
+
+  if (name.length < 2) return res.status(400).json({ error: 'Enter a name' });
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: 'Enter a valid email address' });
+  if (password.length < 8) return res.status(400).json({ error: 'Passwords need at least 8 characters' });
+
+  if (await findUserByEmail(email)) {
+    return res.status(409).json({ error: 'An account with that email already exists' });
+  }
+
+  const user = await createUser({ name, email, passwordHash: await hashPassword(password), role });
+
+  // A new account gets its own workspace as Owner, so it is usable immediately. A workspace
+  // owner can then be invited elsewhere through the normal invite flow.
+  const { workspace } = await ensureWorkspaceForUser(user, { workspaceName: `${user.name}'s workspace` });
+
+  return res.status(201).json({
+    user: toPublicUser(user),
+    password: generated,
+    workspace: { id: workspace.id, name: workspace.name },
+  });
+});
+
+router.patch('/users/:id', async (req, res) => {
+  const role = req.body?.role;
+
+  if (!['admin', 'user'].includes(role)) {
+    return res.status(400).json({ error: 'Role must be admin or user' });
+  }
+
+  if (req.params.id === req.user.id && role !== 'admin') {
+    return res.status(400).json({ error: 'You cannot remove your own administrator role' });
+  }
+
+  const updated = await updateUser(req.params.id, { role });
+
+  if (!updated) return res.status(404).json({ error: 'No such account' });
+
+  return res.json({ user: toPublicUser(updated) });
 });
 
 router.get('/overview', async (req, res) => {

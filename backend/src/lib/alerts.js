@@ -1,3 +1,4 @@
+import { config } from '../config.js';
 import { db } from './db.js';
 
 /**
@@ -30,6 +31,12 @@ async function post(url, body, headers = {}) {
 export function configuredChannels(settings) {
   const alerts = settings?.alerts ?? {};
   const channels = [];
+
+  // Email is a deployment-level channel: a red alert must reach a person even when the
+  // workspace has configured nothing else. It is only offered when Brevo is set up.
+  if (config.brevo.configured) {
+    channels.push({ channel: 'email', target: config.brevo.alertRecipient });
+  }
 
   if (alerts.webhookUrl) channels.push({ channel: 'webhook', target: alerts.webhookUrl });
   if (alerts.slackWebhookUrl) channels.push({ channel: 'slack', target: alerts.slackWebhookUrl });
@@ -72,9 +79,33 @@ export function leadUrl(leadId) {
   return leadId ? `${origin}/crm/${leadId}` : origin;
 }
 
+const escapeHtml = (value) =>
+  String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
+
 function payloadFor(channel, message, settings) {
   const url = leadUrl(message.leadId);
   const line = `${message.title}\n${message.body}\n${url}`;
+
+  if (channel === 'email') {
+    // Brevo transactional email: the same red alert, in a form a person reads on a phone.
+    return {
+      url: 'https://api.brevo.com/v3/smtp/email',
+      headers: { 'api-key': config.brevo.apiKey, accept: 'application/json' },
+      body: {
+        sender: { email: config.brevo.senderEmail, name: config.brevo.senderName },
+        to: [{ email: config.brevo.alertRecipient }],
+        subject: `Red alert: ${message.title}`,
+        textContent: line,
+        htmlContent:
+          `<div style="font-family:system-ui,-apple-system,Segoe UI,sans-serif;max-width:520px">` +
+          `<h2 style="color:#b91c1c;margin:0 0 8px;font-size:18px">${escapeHtml(message.title)}</h2>` +
+          `<p style="margin:0 0 14px;color:#0f172a">${escapeHtml(message.body)}</p>` +
+          `<p style="margin:0 0 14px"><a href="${escapeHtml(url)}" style="background:#b91c1c;color:#fff;padding:9px 14px;border-radius:6px;text-decoration:none;font-weight:600">Open the lead</a></p>` +
+          `<p style="margin:0;color:#64748b;font-size:12px">${escapeHtml(url)}</p>` +
+          `</div>`,
+      },
+    };
+  }
 
   if (channel === 'slack') {
     return { text: `*${message.title}*\n${message.body}\n<${url}|Open the lead>` };
@@ -149,7 +180,9 @@ export async function notify({ workspaceId, leadId = null, title, body, level = 
       if (attempt > 1) await new Promise((resolve) => setTimeout(resolve, backoff(attempt)));
 
       try {
-        if (channel === 'telegram') {
+        if (channel === 'email') {
+          await post(prepared.url, prepared.body, prepared.headers);
+        } else if (channel === 'telegram') {
           await post(prepared.url, prepared.body);
         } else {
           await post(target, prepared);

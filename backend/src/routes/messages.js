@@ -85,6 +85,17 @@ router.post('/send', requirePermission('crm.edit'), async (req, res) => {
   try {
     sent = await sendWhatsAppMessage(workspaceId, targetNumber, body.slice(0, 4000));
   } catch (error) {
+    // A failed send is recorded, not dropped: the inbox shows it as failed and the same
+    // body can be retried from there without retyping it.
+    await recordOutbound({
+      workspaceId,
+      contactId: contact?.id ?? contactId,
+      leadId: leadId || null,
+      body,
+      providerMessageId: null,
+      status: 'failed',
+    });
+
     return res.status(502).json({ error: `Could not send: ${error.message}` });
   }
 

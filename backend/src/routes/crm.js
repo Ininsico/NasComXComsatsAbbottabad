@@ -399,6 +399,24 @@ router.get('/alerts', requirePermission('integrations.manage'), async (req, res)
 });
 
 /**
+ * Send one real alert through every configured channel, including the Brevo email. This
+ * exists so "does the red alert actually arrive" is a button, not a hope.
+ */
+router.post('/alerts/test', requirePermission('integrations.manage'), async (req, res) => {
+  const { notify } = await import('../lib/alerts.js');
+  const settings = await getSettings(req.workspace.id);
+
+  const attempts = await notify({
+    workspaceId: req.workspace.id,
+    title: `Test alert from ${req.workspace.name}`,
+    body: `This is a test red alert sent by ${req.user.name}. If you can read this, alerts work.`,
+    settings,
+  });
+
+  return res.json({ attempts });
+});
+
+/**
  * The audit log, filterable by event type, actor and date, with the chain verified on each
  * read. Read-only by design: there is no endpoint that can edit or delete an entry.
  */

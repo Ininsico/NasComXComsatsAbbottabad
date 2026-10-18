@@ -23,7 +23,7 @@ export default function Login() {
   const [submitting, setSubmitting] = useState(false);
   const [apiStatus, setApiStatus] = useState('checking');
   const [googleInfo, setGoogleInfo] = useState(null);
-  const [instantAdmin, setInstantAdmin] = useState(null);
+  const [instantInfo, setInstantInfo] = useState(null);
 
   useEffect(() => {
     let active = true;
@@ -49,7 +49,7 @@ export default function Login() {
     api
       .instantLoginInfo()
       .then((payload) => {
-        if (active) setInstantAdmin(payload);
+        if (active) setInstantInfo(payload);
       })
       .catch(() => {});
 
@@ -84,7 +84,11 @@ export default function Login() {
         message: welcome ?? 'Your workspace is ready.',
       });
 
-      navigate(redirectTo, { replace: true });
+      // A platform administrator lands on the system console; everyone else lands on the
+      // workspace dashboard. Two different jobs, two different home screens.
+      navigate(location.state?.from ?? (account.role === 'admin' ? '/admin' : '/dashboard'), {
+        replace: true,
+      });
     } catch (loginError) {
       if (loginError instanceof ApiError && loginError.fields) {
         setFieldErrors(loginError.fields);
@@ -103,7 +107,24 @@ export default function Login() {
     }
   }
 
-  /** Signs into the configured administrator without a password. */
+  /** One click into a workspace role: Owner, Admin, Manager or User. */
+  async function signInAsRole(role) {
+    setSubmitting(true);
+
+    try {
+      const result = await api.instantLogin(role);
+
+      adoptToken(result.token);
+      showToast({ tone: 'success', title: `Signed in as ${result.user.name}` });
+      navigate('/dashboard', { replace: true });
+    } catch (instantError) {
+      showToast({ tone: 'error', title: 'Could not sign in', message: instantError.message });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  /** The platform operator's console, which is a different job from a workspace role. */
   async function signInAsAdmin() {
     setSubmitting(true);
 
@@ -112,7 +133,7 @@ export default function Login() {
 
       adoptToken(result.token);
       showToast({ tone: 'success', title: `Signed in as ${result.user.name}` });
-      navigate(redirectTo, { replace: true });
+      navigate('/admin', { replace: true });
     } catch (instantError) {
       showToast({ tone: 'error', title: 'Could not sign in', message: instantError.message });
     } finally {
@@ -148,23 +169,43 @@ export default function Login() {
           <GoogleSignInButton />
         </div>
 
-        {instantAdmin ? (
+        {instantInfo?.roles?.length ? (
+          <>
+            <p className="auth__or">or jump in as a role</p>
+
+            <div className="instant-login">
+              {instantInfo.roles.map((entry) => (
+                <button
+                  key={entry.role}
+                  type="button"
+                  className="instant-login__button"
+                  disabled={submitting}
+                  onClick={() => signInAsRole(entry.role)}
+                >
+                  <strong>{entry.label}</strong>
+                  <em>{entry.summary}</em>
+                </button>
+              ))}
+            </div>
+
+            <p className="hint" style={{ textAlign: 'center' }}>
+              All four share the “Instant Demo” workspace, so the same records look different by
+              role.
+            </p>
+          </>
+        ) : null}
+
+        {instantInfo?.systemAdmin ? (
           <button
             type="button"
             className="btn btn-secondary btn-block"
-            style={{ marginTop: '0.5rem' }}
+            style={{ marginBottom: '0.5rem' }}
             disabled={submitting}
             onClick={signInAsAdmin}
           >
             <ShieldCheck size={15} aria-hidden="true" />
-            {submitting ? 'Signing in…' : `Sign in as Administrator`}
+            Sign in as System Administrator
           </button>
-        ) : null}
-
-        {instantAdmin ? (
-          <p className="hint" style={{ textAlign: 'center', marginTop: '0.35rem' }}>
-            {instantAdmin.email}
-          </p>
         ) : null}
 
         {googleInfo ? (

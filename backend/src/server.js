@@ -53,8 +53,18 @@ try {
   if (bootstrap) {
     console.log(`Instant login: on, signing in as ${bootstrap.user.email}`);
   }
+
+  // The four role buttons share one workspace, so the same records demonstrate the levels.
+  const { ensureInstantLogins } = await import('./lib/instantLogins.js');
+  const instant = await ensureInstantLogins();
+
+  if (instant) {
+    console.log(
+      `Instant roles ready in "${instant.workspace.name}": ${instant.accounts.map((entry) => entry.label).join(', ')}`,
+    );
+  }
 } catch (error) {
-  console.error(`[instant-login] could not prepare the administrator: ${error.message}`);
+  console.error(`[instant-login] could not prepare the accounts: ${error.message}`);
 }
 
 // Printed on every boot because a redirect_uri_mismatch is fixed by copying these two

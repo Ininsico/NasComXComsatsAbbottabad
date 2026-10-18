@@ -1,6 +1,7 @@
 import {
   Activity,
   Bot,
+  CircleCheckBig,
   CloudUpload,
   CreditCard,
   Database,
@@ -12,7 +13,7 @@ import {
   Users,
   Wallet,
 } from 'lucide-react';
-import { useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import AsyncSection from '../components/AsyncSection.jsx';
 import PlatformHealth from '../components/PlatformHealth.jsx';
@@ -61,6 +62,25 @@ export default function Admin() {
 
   const loadOverview = useCallback(() => api.adminOverview(token), [token]);
   const { data, error, loading, reload } = useApiResource(loadOverview);
+
+  const [people, setPeople] = useState(null);
+  const [draft, setDraft] = useState({ name: '', email: '', role: 'user' });
+  const [created, setCreated] = useState(null);
+  const [notice, setNotice] = useState(null);
+  const [peopleBusy, setPeopleBusy] = useState('');
+
+  const loadPeople = useCallback(
+    () =>
+      api
+        .adminUsers(token)
+        .then((payload) => setPeople(payload.users ?? []))
+        .catch(() => setPeople([])),
+    [token],
+  );
+
+  useEffect(() => {
+    void loadPeople();
+  }, [loadPeople]);
 
   return (
     <>
@@ -218,39 +238,148 @@ export default function Admin() {
         ) : null}
 
         <section className="dash-section">
-          <SectionTitle icon={Users}>All accounts</SectionTitle>
+          <SectionTitle icon={Users}>People</SectionTitle>
+          <p className="hint">
+            Accounts live at the deployment level. Roles here decide who can open this console;
+            workspace membership and level decide what each person sees inside a workspace.
+          </p>
+
+          <form
+            className="card"
+            style={{ marginBottom: '1rem' }}
+            onSubmit={async (event) => {
+              event.preventDefault();
+              setPeopleBusy('create');
+              setNotice(null);
+
+              try {
+                const result = await api.adminCreateUser(token, draft);
+                setCreated({
+                  email: result.user.email,
+                  password: result.password,
+                  workspace: result.workspace?.name ?? null,
+                });
+                setDraft({ name: '', email: '', role: 'user' });
+                await loadPeople();
+              } catch (createError) {
+                setNotice({ tone: 'error', message: createError.message });
+              } finally {
+                setPeopleBusy('');
+              }
+            }}
+          >
+            <span className="label-micro">Create an account</span>
+            <div className="grid grid-3" style={{ marginTop: '0.5rem' }}>
+              <div className="field">
+                <label htmlFor="new-user-name">Name</label>
+                <input
+                  id="new-user-name"
+                  className="input"
+                  value={draft.name}
+                  onChange={(event) => setDraft({ ...draft, name: event.target.value })}
+                  required
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="new-user-email">Email</label>
+                <input
+                  id="new-user-email"
+                  className="input"
+                  type="email"
+                  value={draft.email}
+                  onChange={(event) => setDraft({ ...draft, email: event.target.value })}
+                  required
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="new-user-role">Role</label>
+                <select
+                  id="new-user-role"
+                  className="select"
+                  value={draft.role}
+                  onChange={(event) => setDraft({ ...draft, role: event.target.value })}
+                >
+                  <option value="user">Member</option>
+                  <option value="admin">Administrator</option>
+                </select>
+              </div>
+            </div>
+
+            <button type="submit" className="btn btn-primary btn-sm" disabled={peopleBusy === 'create'}>
+              {peopleBusy === 'create' ? 'Creating…' : 'Create the account'}
+            </button>
+
+            {created ? (
+              <p className="alert alert--success" style={{ marginTop: '0.75rem' }}>
+                <CircleCheckBig size={15} aria-hidden="true" />
+                {created.email} is created{created.workspace ? ` with the workspace “${created.workspace}”` : ''}.
+                Password: <code>{created.password}</code> — shown once.
+              </p>
+            ) : null}
+
+            {notice ? <p className="alert alert--error">{notice.message}</p> : null}
+          </form>
+
           <div className="table-wrap">
             <table className="table">
               <thead>
                 <tr>
                   <th scope="col">Account</th>
-                  <th scope="col">Level</th>
+                  <th scope="col">Role</th>
+                  <th scope="col">Workspace</th>
                   <th scope="col">Joined</th>
                 </tr>
               </thead>
               <tbody>
-                {data.users.map((account) => (
+                {(people ?? []).map((account) => (
                   <tr key={account.id}>
                     <th scope="row">
                       <strong>{account.name}</strong>
                       <br />
-                      <span className="hint">{account.email}</span>
+                      <span className="hint">
+                        {account.email}
+                        {account.passwordSet ? '' : ' · Google only'}
+                      </span>
                     </th>
                     <td>
-                      <span className="pill pill--neutral">
-                        {ROLE_LABELS[account.role] ?? account.role}
-                      </span>
+                      <select
+                        className="select"
+                        value={account.role}
+                        onChange={async (event) => {
+                          setPeopleBusy(account.id);
+                          setNotice(null);
+
+                          try {
+                            await api.adminUpdateUser(token, account.id, { role: event.target.value });
+                            await loadPeople();
+                          } catch (roleError) {
+                            setNotice({ tone: 'error', message: roleError.message });
+                          } finally {
+                            setPeopleBusy('');
+                          }
+                        }}
+                        disabled={peopleBusy === account.id}
+                      >
+                        <option value="user">Member</option>
+                        <option value="admin">Administrator</option>
+                      </select>
+                    </td>
+                    <td>
+                      {account.member ? (
+                        <>
+                          {account.member.workspaceName}
+                          <br />
+                          <span className="hint">
+                            {account.member.level} · {account.member.status.replace('_', ' ')}
+                          </span>
+                        </>
+                      ) : (
+                        <span className="hint">none</span>
+                      )}
                     </td>
                     <td>{formatDateTime(account.createdAt)}</td>
                   </tr>
                 ))}
-                {data.users.length === 0 ? (
-                  <tr>
-                    <td colSpan={3}>
-                      <span className="hint">No accounts yet.</span>
-                    </td>
-                  </tr>
-                ) : null}
               </tbody>
             </table>
           </div>

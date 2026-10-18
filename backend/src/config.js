@@ -73,6 +73,16 @@ export const config = {
     webhookSecret: process.env.STRIPE_WEBHOOK_SECRET ?? '',
     currency: (process.env.STRIPE_CURRENCY ?? 'usd').toLowerCase(),
   },
+  /**
+   * Brevo transactional email, used for the red alerts (a lead that was not acknowledged).
+   * The key is a secret; it is only ever used server-side.
+   */
+  brevo: {
+    apiKey: process.env.BREVO_API_KEY ?? '',
+    senderEmail: process.env.BREVO_SENDER_EMAIL ?? '',
+    senderName: process.env.BREVO_SENDER_NAME ?? 'Nascom CRM',
+    alertRecipient: (process.env.BREVO_ALERT_RECIPIENT ?? process.env.BREVO_SENDER_EMAIL ?? '').trim(),
+  },
   google: {
     clientId: process.env.GOOGLE_CLIENT_ID ?? '',
     clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? '',
@@ -117,6 +127,11 @@ config.binance.configured = Boolean(config.binance.apiKey && config.binance.apiS
 
 /** With only the secret key Stripe can still take a payment; the webhook is optional. */
 config.stripe.configured = Boolean(config.stripe.secretKey);
+
+/** Email alerts need the key, a verified sender, and somewhere to send. */
+config.brevo.configured = Boolean(
+  config.brevo.apiKey && config.brevo.senderEmail && config.brevo.alertRecipient,
+);
 
 if (config.env === 'production' && !process.env.JWT_SECRET) {
   throw new Error('JWT_SECRET must be set when NODE_ENV=production');
