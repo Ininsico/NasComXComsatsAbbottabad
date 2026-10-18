@@ -68,7 +68,7 @@ export default function AppLayout() {
           </button>
 
           <div className="app-topbar__titles">
-            <h1>Campus portal</h1>
+            <h1>Workspace</h1>
             <p>
               {ROLE_LABELS[user.role] ?? user.role} · {user.email}
             </p>

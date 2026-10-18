@@ -1,121 +1,89 @@
-import { ArrowRight, Eye, Handshake, Target } from 'lucide-react';
+import { Handshake, Rocket, Target } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import PageHero from '../components/PageHero.jsx';
-
-const TIMELINE = [
-  {
-    year: '1998',
-    title: 'Foundation',
-    body: 'COMSATS establishes its Abbottabad campus to serve the Hazara division with quality higher education.',
-  },
-  {
-    year: '2005',
-    title: 'Faculties expand',
-    body: 'Engineering and computing programmes are added alongside the existing sciences faculty.',
-  },
-  {
-    year: '2014',
-    title: 'Management sciences',
-    body: 'Business and management degrees launch, widening the campus beyond pure sciences.',
-  },
-  {
-    year: '2026',
-    title: 'Digital campus',
-    body: 'A unified portal replaces paper registers for admissions, attendance, examinations and fees.',
-  },
-];
+import { BRAND, HERO_STATS } from '../data/site.js';
 
 const VALUES = [
   {
     icon: Target,
-    title: 'Our mission',
-    body: 'Deliver affordable, industry-relevant education that raises the standard of living in Khyber Pakhtunkhwa.',
+    title: 'The problem we picked',
+    body: 'Small teams do not lose deals because they cannot sell. They lose them because the follow-up lives in someone’s head, and nobody can see what is actually in play.',
   },
   {
-    icon: Eye,
-    title: 'Our vision',
-    body: 'Be the region’s most trusted institution for computing, engineering, sciences and management education.',
+    icon: Rocket,
+    title: 'What we build',
+    body: 'A pipeline fast enough to update during a call, and reporting built from those same records — no parallel spreadsheet.',
   },
   {
     icon: Handshake,
-    title: 'Our values',
-    body: 'Merit, transparency, academic honesty and service to the community guide every decision we make.',
+    title: 'How we work',
+    body: 'No implementation project, no per-lead pricing games, and an export button that works on day one. If leaving is easy, staying has to be earned.',
   },
 ];
 
-const LEADERSHIP = [
-  { name: 'Prof. Dr. Aftab Ahmad', role: 'Campus Director' },
-  { name: 'Dr. Sadia Khan', role: 'Head, Department of Computer Science' },
-  { name: 'Dr. Imran Yousaf', role: 'Head, Department of Electrical Engineering' },
-  { name: 'Ms. Nadia Bashir', role: 'Registrar' },
+const TIMELINE = [
+  {
+    year: 'Day 1',
+    title: 'Capture',
+    body: 'The website form, WhatsApp and manual entry all create the same kind of lead, with a source.',
+  },
+  {
+    year: 'Week 1',
+    title: 'Qualify',
+    body: 'Calls and notes attach to the lead. Stages change with a click, and the change is recorded.',
+  },
+  {
+    year: 'Month 1',
+    title: 'Close',
+    body: 'Conversion by stage shows where deals leak, so the next month is spent on the right problem.',
+  },
 ];
-
-function initials(name) {
-  return name
-    .replace(/^(Prof\.|Dr\.|Ms\.|Mr\.|Mrs\.)\s*/i, '')
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0])
-    .join('');
-}
 
 export default function About() {
   return (
     <>
       <PageHero
-        title="About the campus"
-        description="COMSATS University Islamabad, Abbottabad Campus — a public university campus serving the Hazara division since 1998."
+        title="Built for the follow-up"
+        description={`${BRAND.product} is a CRM for teams that sell in the field as much as the office — the pipeline is the product, not a dashboard bolted onto one.`}
       />
 
       <section className="section">
         <div className="container split">
           <div>
-            <span className="eyebrow">Who we are</span>
-            <h2>A public campus with a regional purpose</h2>
+            <span className="eyebrow">Why this exists</span>
+            <h2>The follow-up is the product</h2>
             <p className="lede">
-              The Abbottabad campus is part of COMSATS University Islamabad, a federally chartered
-              public university. We run a semester system, admit on open merit and publish results
-              through a transparent examination process.
+              Most CRMs are built for a sales operations team that a ten-person company does not
+              have. The result is a tool nobody updates, and a forecast nobody trusts.
             </p>
             <p className="muted" style={{ fontSize: '0.875rem' }}>
-              Our graduates work in software houses, telecom operators, power utilities, banks and
-              public administration across Pakistan. Nearly a third continue into postgraduate
-              study.
+              {BRAND.product} starts from the other end: make the update one click, keep the history
+              attached to the lead, and derive every report from those records. If a rep will not do
+              it from a phone at an event, it does not belong in the product.
             </p>
             <div className="btn-row">
-              <Link className="btn btn-primary" to="/academics">
-                See our programmes
+              <Link className="btn btn-primary" to="/signup">
+                Create an account
               </Link>
-              <Link className="btn btn-secondary" to="/faculty">
-                Meet the faculty
+              <Link className="btn btn-secondary" to="/contact">
+                Talk to us
               </Link>
             </div>
           </div>
 
           <div className="panel">
-            <span className="label-micro">At a glance</span>
-            <h3 style={{ marginTop: '0.25rem' }}>Campus facts</h3>
+            <span className="label-micro">What teams see</span>
+            <h3 style={{ marginTop: '0.25rem' }}>The numbers we care about</h3>
             <ul className="info-list">
+              {HERO_STATS.map((stat) => (
+                <li key={stat.label}>
+                  <strong>{stat.value}</strong>
+                  <span>{stat.label}</span>
+                </li>
+              ))}
               <li>
-                <strong>Established</strong>
-                <span>1998</span>
-              </li>
-              <li>
-                <strong>Charter</strong>
-                <span>COMSATS University Islamabad</span>
-              </li>
-              <li>
-                <strong>Location</strong>
-                <span>Park Road, Abbottabad, Khyber Pakhtunkhwa</span>
-              </li>
-              <li>
-                <strong>Faculties</strong>
-                <span>Computing, Engineering, Sciences, Management</span>
-              </li>
-              <li>
-                <strong>Intake</strong>
-                <span>Fall and Spring semesters</span>
+                <strong>One click</strong>
+                <span>to move a lead between stages</span>
               </li>
             </ul>
           </div>
@@ -125,9 +93,10 @@ export default function About() {
       <section className="section section--soft">
         <div className="container">
           <div className="section-head section-head--center">
-            <span className="eyebrow">Mission &amp; vision</span>
-            <h2>What we are here to do</h2>
+            <span className="eyebrow">Principles</span>
+            <h2>Three decisions that shape the product</h2>
           </div>
+
           <div className="grid grid-3">
             {VALUES.map(({ icon: Icon, title, body }) => (
               <article className="card" key={title}>
@@ -147,10 +116,10 @@ export default function About() {
       <section className="section">
         <div className="container split">
           <div>
-            <span className="eyebrow">Our history</span>
-            <h2>From one faculty to four</h2>
+            <span className="eyebrow">What the first month looks like</span>
+            <h2>Useful on the first afternoon</h2>
             <p className="muted" style={{ fontSize: '0.875rem' }}>
-              Three decades of steady growth, without losing the focus on teaching quality.
+              There is no onboarding phase that has to finish before the product is worth opening.
             </p>
           </div>
 
@@ -166,36 +135,22 @@ export default function About() {
         </div>
       </section>
 
-      <section className="section section--soft">
+      <section className="section">
         <div className="container">
-          <div className="section-head">
-            <span className="eyebrow">Leadership</span>
-            <h2>Who runs the campus</h2>
+          <div className="cta-band">
+            <div>
+              <h2>See it with your own leads</h2>
+              <p>Import a CSV and run one week. If the pipeline is not better, export and leave.</p>
+            </div>
+            <div className="btn-row">
+              <Link className="btn btn-primary" to="/signup">
+                Start free
+              </Link>
+              <Link className="btn btn-secondary" to="/pricing">
+                See pricing
+              </Link>
+            </div>
           </div>
-
-          <div className="grid grid-2">
-            {LEADERSHIP.map((person) => (
-              <article className="person" key={person.name}>
-                <span className="person__avatar" aria-hidden="true">
-                  {initials(person.name)}
-                </span>
-                <div>
-                  <h3>{person.name}</h3>
-                  <p className="person__role">{person.role}</p>
-                  <p className="muted" style={{ fontSize: '0.8125rem', marginBottom: 0 }}>
-                    Available for student consultations during published office hours.
-                  </p>
-                </div>
-              </article>
-            ))}
-          </div>
-
-          <p className="card__more" style={{ marginTop: '1.75rem' }}>
-            <Link className="btn btn-primary" to="/faculty">
-              Full faculty directory
-              <ArrowRight size={14} aria-hidden="true" />
-            </Link>
-          </p>
         </div>
       </section>
     </>

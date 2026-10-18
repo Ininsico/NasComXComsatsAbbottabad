@@ -1,20 +1,23 @@
-import { Clock, Mail, MapPin, Phone, Send } from 'lucide-react';
+import { CircleCheckBig, Clock, Mail, MapPin, Send } from 'lucide-react';
 import { useState } from 'react';
 import PageHero from '../components/PageHero.jsx';
 import { useToast } from '../context/toastContext.js';
 import { CONTACT } from '../data/site.js';
+import { api } from '../lib/api.js';
 
-const EMPTY_FORM = { name: '', email: '', subject: 'Admissions enquiry', message: '' };
+const EMPTY_FORM = { name: '', email: '', company: '', message: '' };
 
 export default function Contact() {
   const { showToast } = useToast();
   const [form, setForm] = useState(EMPTY_FORM);
   const [errors, setErrors] = useState({});
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState(false);
 
   const update = (field) => (event) =>
     setForm((previous) => ({ ...previous, [field]: event.target.value }));
 
-  function handleSubmit(event) {
+  async function handleSubmit(event) {
     event.preventDefault();
 
     const nextErrors = {};
@@ -37,117 +40,137 @@ export default function Contact() {
       return;
     }
 
-    setForm(EMPTY_FORM);
-    showToast({
-      tone: 'success',
-      title: 'Message sent',
-      message: 'The administration office will reply within one working day.',
-    });
+    setSending(true);
+
+    try {
+      await api.demoRequest(form);
+      setSent(true);
+      setForm(EMPTY_FORM);
+      showToast({
+        tone: 'success',
+        title: 'Request received',
+        message: 'It is in the pipeline — we reply within one working day.',
+      });
+    } catch (error) {
+      showToast({ tone: 'error', title: 'Could not send', message: error.message });
+      setErrors(error.fields ?? {});
+    } finally {
+      setSending(false);
+    }
   }
 
   return (
     <>
       <PageHero
-        title="Contact us"
-        description="Questions about admissions, fees, transcripts or hostel facilities? Send us a message or call the administration office."
+        title="Book a demo"
+        description="Tell us how your team captures leads today and we will show you the pipeline with your own data. One working day to reply."
       />
 
       <section className="section">
         <div className="container contact-grid">
           <div className="card">
-            <span className="label-micro">Send a message</span>
-            <h2 style={{ marginTop: '0.25rem' }}>We reply within one working day</h2>
+            <span className="label-micro">Talk to sales</span>
+            <h2 style={{ marginTop: '0.25rem' }}>
+              {sent ? 'Request received' : 'Send us a message'}
+            </h2>
 
-            <form className="form" onSubmit={handleSubmit} noValidate>
-              <div className="field">
-                <label htmlFor="contact-name">Full name</label>
-                <input
-                  id="contact-name"
-                  className="input"
-                  name="name"
-                  value={form.name}
-                  onChange={update('name')}
-                  aria-invalid={Boolean(errors.name)}
-                  autoComplete="name"
-                />
-                {errors.name ? <span className="field-error">{errors.name}</span> : null}
-              </div>
-
-              <div className="field">
-                <label htmlFor="contact-email">Email address</label>
-                <input
-                  id="contact-email"
-                  className="input"
-                  name="email"
-                  type="email"
-                  value={form.email}
-                  onChange={update('email')}
-                  aria-invalid={Boolean(errors.email)}
-                  autoComplete="email"
-                />
-                {errors.email ? <span className="field-error">{errors.email}</span> : null}
-              </div>
-
-              <div className="field">
-                <label htmlFor="contact-subject">Subject</label>
-                <select
-                  id="contact-subject"
-                  className="select"
-                  name="subject"
-                  value={form.subject}
-                  onChange={update('subject')}
-                >
-                  <option>Admissions enquiry</option>
-                  <option>Fee &amp; scholarship</option>
-                  <option>Transcript or documents</option>
-                  <option>Hostel &amp; transport</option>
-                  <option>Something else</option>
-                </select>
-              </div>
-
-              <div className="field">
-                <label htmlFor="contact-message">Message</label>
-                <textarea
-                  id="contact-message"
-                  className="textarea"
-                  name="message"
-                  value={form.message}
-                  onChange={update('message')}
-                  aria-invalid={Boolean(errors.message)}
-                  placeholder="Tell us what you need help with, and include your registration number if you have one."
-                />
-                {errors.message ? <span className="field-error">{errors.message}</span> : null}
-              </div>
-
+            {sent ? (
               <div>
-                <button type="submit" className="btn btn-primary">
-                  <Send size={15} aria-hidden="true" />
-                  Send message
+                <p className="alert alert--success">
+                  <CircleCheckBig size={15} aria-hidden="true" />
+                  Your request is in the pipeline with a source of “website”. We will reply within one
+                  working day.
+                </p>
+                <p className="muted" style={{ fontSize: '0.875rem' }}>
+                  Want to skip the queue? Create an account and start with the free tier now.
+                </p>
+                <button type="button" className="btn btn-secondary" onClick={() => setSent(false)}>
+                  Send another message
                 </button>
               </div>
-            </form>
+            ) : (
+              <form className="form" onSubmit={handleSubmit} noValidate>
+                <div className="field">
+                  <label htmlFor="contact-name">Your name</label>
+                  <input
+                    id="contact-name"
+                    className="input"
+                    name="name"
+                    value={form.name}
+                    onChange={update('name')}
+                    aria-invalid={Boolean(errors.name)}
+                    autoComplete="name"
+                  />
+                  {errors.name ? <span className="field-error">{errors.name}</span> : null}
+                </div>
+
+                <div className="field">
+                  <label htmlFor="contact-email">Work email</label>
+                  <input
+                    id="contact-email"
+                    className="input"
+                    name="email"
+                    type="email"
+                    value={form.email}
+                    onChange={update('email')}
+                    aria-invalid={Boolean(errors.email)}
+                    autoComplete="email"
+                  />
+                  {errors.email ? <span className="field-error">{errors.email}</span> : null}
+                </div>
+
+                <div className="field">
+                  <label htmlFor="contact-company">Company</label>
+                  <input
+                    id="contact-company"
+                    className="input"
+                    name="company"
+                    value={form.company}
+                    onChange={update('company')}
+                    autoComplete="organization"
+                  />
+                </div>
+
+                <div className="field">
+                  <label htmlFor="contact-message">What are you trying to fix?</label>
+                  <textarea
+                    id="contact-message"
+                    className="textarea"
+                    name="message"
+                    value={form.message}
+                    onChange={update('message')}
+                    aria-invalid={Boolean(errors.message)}
+                    placeholder="How many people sell, where do leads come from today, and what falls through?"
+                  />
+                  {errors.message ? <span className="field-error">{errors.message}</span> : null}
+                </div>
+
+                <div>
+                  <button type="submit" className="btn btn-primary" disabled={sending}>
+                    <Send size={15} aria-hidden="true" />
+                    {sending ? 'Sending…' : 'Send request'}
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
 
           <aside className="panel">
-            <span className="label-micro">Campus office</span>
-            <h3 style={{ marginTop: '0.25rem' }}>COMSATS Abbottabad</h3>
+            <span className="label-micro">Reach us</span>
+            <h3 style={{ marginTop: '0.25rem' }}>Sales and support</h3>
 
             <ul className="info-list info-list--inline">
               <li>
-                <MapPin size={15} aria-hidden="true" />
-                <span>{CONTACT.address}</span>
-              </li>
-              <li>
-                <Phone size={15} aria-hidden="true" />
-                <a href={`tel:${CONTACT.phone.replace(/\s/g, '')}`}>{CONTACT.phone}</a>
+                <Mail size={15} aria-hidden="true" />
+                <a href={`mailto:${CONTACT.sales}`}>{CONTACT.sales}</a>
               </li>
               <li>
                 <Mail size={15} aria-hidden="true" />
                 <a href={`mailto:${CONTACT.email}`}>{CONTACT.email}</a>
               </li>
               <li>
-                <Mail size={15} aria-hidden="true" />
-                <a href={`mailto:${CONTACT.admissionsEmail}`}>{CONTACT.admissionsEmail}</a>
+                <MapPin size={15} aria-hidden="true" />
+                <span>{CONTACT.address}</span>
               </li>
               <li>
                 <Clock size={15} aria-hidden="true" />
@@ -157,10 +180,10 @@ export default function Contact() {
 
             <hr className="divider" />
 
-            <span className="label-micro">Finding us</span>
-            <p className="muted" style={{ fontSize: '0.8125rem', marginBottom: 0 }}>
-              The campus is on Park Road, roughly 4 km from Abbottabad city centre. Public transport
-              and the campus shuttle both stop at the main gate.
+            <span className="label-micro">Prefer to start now?</span>
+            <p className="muted" style={{ fontSize: '0.8125rem' }}>
+              The free tier is a real pipeline, not a trial that expires. Create an account, import a
+              CSV, and invite the team.
             </p>
           </aside>
         </div>

@@ -77,15 +77,15 @@ export default function Sidebar({ collapsed, onToggleCollapse, open, onNavigate 
   return (
     <aside
       className={`sidebar${collapsed ? ' sidebar--collapsed' : ''}${open ? ' is-open' : ''}`}
-      aria-label="Portal navigation"
+      aria-label="Workspace navigation"
     >
       <div className="sidebar__head">
         <span className="sidebar__plate">
           <img src="/logo.png" alt="" />
         </span>
         <span className="sidebar__brand-text">
-          <strong>COMSATS</strong>
-          <span>Abbottabad</span>
+          <strong>Nascom</strong>
+          <span>CRM</span>
         </span>
         <button
           type="button"
@@ -102,7 +102,7 @@ export default function Sidebar({ collapsed, onToggleCollapse, open, onNavigate 
       </div>
 
       <nav className="sidebar__nav">
-        <p className="sidebar__section">Portal</p>
+        <p className="sidebar__section">Workspace</p>
         {portalLinks.map((link) => (
           <SidebarLink key={link.to} link={link} onNavigate={onNavigate} />
         ))}

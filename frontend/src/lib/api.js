@@ -80,6 +80,9 @@ export const api = {
   overview: (token) => request('/api/account/overview', { token }),
   adminOverview: (token) => request('/api/admin/overview', { token }),
   adminMetrics: (token) => request('/api/admin/metrics', { token }),
+
+  // Public: the marketing site's demo form writes straight into the CRM pipeline.
+  demoRequest: (payload) => request('/api/crm/demo-request', { method: 'POST', body: payload }),
   ask: (token, question) =>
     request('/api/assistant/ask', { method: 'POST', body: { question }, token }),
 

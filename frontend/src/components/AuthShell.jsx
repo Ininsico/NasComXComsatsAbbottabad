@@ -1,10 +1,10 @@
 import { Link } from 'react-router-dom';
 
 const POINTS = [
-  'Live attendance and result tracking',
-  'Fee vouchers and payment history',
-  'Class timetables and exam datesheets',
-  'Announcements from your department',
+  'A pipeline that updates in one click',
+  'Leads captured from the website, WhatsApp and manual entry',
+  'Activity history attached to every lead',
+  'Reporting computed from the records your team keeps',
 ];
 
 export default function AuthShell({ children }) {
@@ -16,16 +16,16 @@ export default function AuthShell({ children }) {
             <img src="/logo.png" alt="" />
           </span>
           <span className="sidebar__brand-text">
-            <strong>COMSATS</strong>
-            <span>Abbottabad</span>
+            <strong>Nascom</strong>
+            <span>CRM</span>
           </span>
         </Link>
 
         <div>
-          <h2>The campus portal for COMSATS Abbottabad</h2>
+          <h2>The CRM that keeps every deal moving</h2>
           <p>
-            One account for students, parents and faculty. Sign in to manage academics, finance and
-            communication from a single dashboard.
+            One workspace for the pipeline, the conversations and the numbers. Sign in to pick up
+            where the team left off.
           </p>
           <ul className="list-check">
             {POINTS.map((point) => (
@@ -35,7 +35,7 @@ export default function AuthShell({ children }) {
         </div>
 
         <p className="auth__aside-foot">
-          &copy; {new Date().getFullYear()} COMSATS Abbottabad · Park Road, Abbottabad
+          &copy; {new Date().getFullYear()} Nascom · Remote-first
         </p>
       </aside>
 

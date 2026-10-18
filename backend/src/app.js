@@ -10,6 +10,7 @@ import aiRoutes from './routes/ai.js';
 import assistantRoutes from './routes/assistant.js';
 import authRoutes from './routes/auth.js';
 import campusRoutes from './routes/campus.js';
+import crmRoutes from './routes/crm.js';
 import deployRoutes from './routes/deploy.js';
 import documentRoutes from './routes/documents.js';
 import paymentRoutes from './routes/payments.js';
@@ -60,6 +61,10 @@ export function createApp() {
   app.use('/api/profile', profileRoutes);
   app.use('/api/ai', aiRoutes);
   app.use('/api/whatsapp', whatsappRoutes);
+
+  // The CRM: leads, pipeline and activity. /demo-request is public so the marketing
+  // site's form feeds the pipeline directly.
+  app.use('/api/crm', crmRoutes);
 
   // Whether a deployment is currently replacing the stack. Public and read-only
   // unless DEPLOY_STATUS_TOKEN is set, which only the deploy pipeline does.

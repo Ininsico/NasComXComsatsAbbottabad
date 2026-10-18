@@ -1,14 +1,7 @@
-import { Mail, MapPin, Phone } from 'lucide-react';
+import { Mail, MapPin } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { CONTACT, NAV_LINKS } from '../data/site.js';
+import { BRAND, CONTACT, FOOTER_COLUMNS, NAV_LINKS } from '../data/site.js';
 import Logo from './Logo.jsx';
-
-const ACADEMIC_LINKS = [
-  'Faculty of Computing',
-  'Faculty of Engineering',
-  'Faculty of Sciences',
-  'Faculty of Management',
-];
 
 export default function Footer() {
   return (
@@ -16,11 +9,8 @@ export default function Footer() {
       <div className="container">
         <div className="footer-grid">
           <div className="footer-about">
-            <Logo tagline="Abbottabad Campus" />
-            <p style={{ marginTop: '0.875rem' }}>
-              A campus management platform for students, parents and faculty — results, attendance,
-              fees and announcements in one place.
-            </p>
+            <Logo tagline="CRM" />
+            <p style={{ marginTop: '0.875rem' }}>{BRAND.description}</p>
           </div>
 
           <div className="footer-col">
@@ -34,16 +24,18 @@ export default function Footer() {
             </ul>
           </div>
 
-          <div className="footer-col">
-            <h3>Academics</h3>
-            <ul>
-              {ACADEMIC_LINKS.map((faculty) => (
-                <li key={faculty}>
-                  <Link to="/academics">{faculty}</Link>
-                </li>
-              ))}
-            </ul>
-          </div>
+          {FOOTER_COLUMNS.map((column) => (
+            <div className="footer-col" key={column.title}>
+              <h3>{column.title}</h3>
+              <ul>
+                {column.links.map((link) => (
+                  <li key={link.label}>
+                    <Link to={link.to}>{link.label}</Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
 
           <div className="footer-col">
             <h3>Contact</h3>
@@ -53,19 +45,21 @@ export default function Footer() {
                 <span>{CONTACT.address}</span>
               </li>
               <li>
-                <Phone size={15} aria-hidden="true" />
-                <a href={`tel:${CONTACT.phone.replace(/\s/g, '')}`}>{CONTACT.phone}</a>
+                <Mail size={15} aria-hidden="true" />
+                <a href={`mailto:${CONTACT.email}`}>{CONTACT.email}</a>
               </li>
               <li>
                 <Mail size={15} aria-hidden="true" />
-                <a href={`mailto:${CONTACT.email}`}>{CONTACT.email}</a>
+                <a href={`mailto:${CONTACT.sales}`}>{CONTACT.sales}</a>
               </li>
             </ul>
           </div>
         </div>
 
         <div className="footer-bottom">
-          <p>&copy; {new Date().getFullYear()} COMSATS Abbottabad. All rights reserved.</p>
+          <p>
+            &copy; {new Date().getFullYear()} {BRAND.name}. All rights reserved.
+          </p>
           <p>
             <Link to="/contact">Privacy</Link> &nbsp;·&nbsp; <Link to="/contact">Terms of use</Link>
           </p>
