@@ -22,6 +22,8 @@ export default function Login() {
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [apiStatus, setApiStatus] = useState('checking');
+  const [demoAccounts, setDemoAccounts] = useState([]);
+  const [googleInfo, setGoogleInfo] = useState(null);
 
   useEffect(() => {
     let active = true;
@@ -34,6 +36,21 @@ export default function Login() {
       .catch(() => {
         if (active) setApiStatus('down');
       });
+
+    // Both are optional: a deployment with no demo seed returns 404, and that is fine.
+    api
+      .demoAccounts()
+      .then((payload) => {
+        if (active) setDemoAccounts(payload.accounts ?? []);
+      })
+      .catch(() => {});
+
+    api
+      .googleInfo()
+      .then((payload) => {
+        if (active) setGoogleInfo(payload);
+      })
+      .catch(() => {});
 
     return () => {
       active = false;
@@ -48,17 +65,22 @@ export default function Login() {
 
   async function handleSubmit(event) {
     event.preventDefault();
+    await signIn({ email: form.email.trim(), password: form.password });
+  }
+
+  /** The demo buttons carry the seeded credentials, so one click is the whole sign-in. */
+  async function signIn(credentials, welcome) {
     setError('');
     setFieldErrors({});
     setSubmitting(true);
 
     try {
-      const account = await login({ email: form.email.trim(), password: form.password });
+      const account = await login(credentials);
 
       showToast({
         tone: 'success',
         title: `Welcome back, ${account.name.split(' ')[0]}`,
-        message: 'Your workspace is ready.',
+        message: welcome ?? 'Your workspace is ready.',
       });
 
       navigate(redirectTo, { replace: true });
@@ -107,6 +129,51 @@ export default function Login() {
         <div className="field" style={{ marginTop: '1.25rem' }}>
           <GoogleSignInButton />
         </div>
+
+        {googleInfo ? (
+          <details className="google-setup">
+            <summary>Google says “redirect_uri_mismatch”?</summary>
+            <p className="hint">
+              Copy both of these, exactly, into the OAuth client&rsquo;s Authorised redirect URIs, then
+              save and try again.
+            </p>
+            <code>{googleInfo.signInRedirectUri}</code>
+            <code>{googleInfo.calendarRedirectUri}</code>
+            {!googleInfo.configured ? (
+              <p className="hint" style={{ marginBottom: 0 }}>
+                This server has no Google client configured either, so sign in with a password below.
+              </p>
+            ) : null}
+          </details>
+        ) : null}
+
+        {demoAccounts.length > 0 ? (
+          <>
+            <p className="auth__or">or jump straight in</p>
+
+            <div className="instant-login">
+              {demoAccounts.map((account) => (
+                <button
+                  key={account.key}
+                  type="button"
+                  className="instant-login__button"
+                  disabled={submitting}
+                  onClick={() =>
+                    signIn({ email: account.email, password: account.password }, account.summary)
+                  }
+                >
+                  <strong>{account.label}</strong>
+                  <em>{account.summary}</em>
+                </button>
+              ))}
+            </div>
+
+            <p className="hint" style={{ textAlign: 'center' }}>
+              Demo accounts created by <code>npm run demo:seed</code>. Each starts at a different
+              level, so the permissions differ.
+            </p>
+          </>
+        ) : null}
 
         <p className="auth__or">or sign in with a password</p>
 

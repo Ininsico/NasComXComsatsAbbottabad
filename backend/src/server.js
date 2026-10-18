@@ -1,6 +1,9 @@
 import { createApp } from './app.js';
 import { config } from './config.js';
+import { redirectUri as calendarRedirectUri } from './lib/calendar.js';
+import { readDemoSeed } from './lib/demoAccounts.js';
 import { startEscalationTicker } from './lib/escalation.js';
+import { identityRedirectUri } from './lib/googleIdentity.js';
 import { seedProductKnowledge } from './lib/knowledge.js';
 import { migrateStageKeys } from './lib/leads.js';
 import { startPaymentWatcher } from './lib/paymentWatcher.js';
@@ -32,6 +35,19 @@ try {
   console.log(`RAG: indexed ${knowledge.chunks} chunk(s) into ${knowledge.namespace}`);
 } catch (error) {
   console.error(`RAG seeding failed: ${error.message}`);
+}
+
+// Printed on every boot because a redirect_uri_mismatch is fixed by copying these two
+// strings into the Google OAuth client, and guessing them wastes an afternoon.
+console.log(`Google sign-in: ${config.google.clientId && config.google.clientSecret ? 'configured' : 'not configured'}`);
+console.log(`  sign-in callback: ${identityRedirectUri()}`);
+console.log(`  calendar callback: ${calendarRedirectUri()}`);
+console.log('  Both must be listed under "Authorised redirect URIs" on that OAuth client.');
+
+const demo = await readDemoSeed();
+
+if (demo) {
+  console.log(`Demo sign-in buttons: offered (${demo.accounts.length} account(s), seeded ${demo.seededAt}).`);
 }
 
 const app = createApp();

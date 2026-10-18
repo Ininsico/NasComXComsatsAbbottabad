@@ -26,6 +26,17 @@ export function googleSignInConfigured() {
   return Boolean(config.google.clientId && config.google.clientSecret);
 }
 
+/**
+ * Where the API answers. In production PUBLIC_ORIGIN is the one domain that serves both the
+ * SPA and the API (nginx routes /api to the backend), so this matches. Locally they are
+ * different processes, and the callback has to point at the API on 4000, not the dev server
+ * on 5173 — getting that wrong is a redirect_uri_mismatch that looks like a Google problem.
+ */
+export function apiOrigin() {
+  return (process.env.PUBLIC_ORIGIN || 'http://localhost:4000').replace(/\/+$/, '');
+}
+
+/** Where the browser is sent back to after sign-in: the SPA. */
 export function publicOrigin() {
   return (process.env.PUBLIC_ORIGIN || 'http://localhost:5173').replace(/\/+$/, '');
 }
@@ -33,7 +44,7 @@ export function publicOrigin() {
 export function identityRedirectUri() {
   return (
     process.env.GOOGLE_IDENTITY_REDIRECT_URI ||
-    `${publicOrigin()}/api/auth/google/callback`
+    `${apiOrigin()}/api/auth/google/callback`
   );
 }
 

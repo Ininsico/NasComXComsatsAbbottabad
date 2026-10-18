@@ -10,6 +10,7 @@
     "start": "node src/server.js",
     "test": "node --test test/*.test.js",
     "owner:create": "node src/scripts/createOwner.js",
+    "demo:seed": "node src/scripts/demoSeed.js",
     "whatsapp:pair": "node src/scripts/whatsapp.js pair",
     "whatsapp:status": "node src/scripts/whatsapp.js status",
     "whatsapp:logout": "node src/scripts/whatsapp.js logout"

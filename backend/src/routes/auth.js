@@ -1,12 +1,15 @@
 import { Router } from 'express';
 import { issueToken, requireAuth, verifyPassword } from '../lib/auth.js';
+import { redirectUri as calendarRedirectUri } from '../lib/calendar.js';
 import { ensureWorkspaceForUser } from '../lib/context.js';
+import { readDemoSeed } from '../lib/demoAccounts.js';
 import {
   authorizationUrl,
   consumeState,
   exchangeCode,
   fetchIdentity,
   googleSignInConfigured,
+  identityRedirectUri,
   publicOrigin,
 } from '../lib/googleIdentity.js';
 import { createUser, findUserByEmail, toPublicUser } from '../lib/store.js';
@@ -23,6 +26,49 @@ router.post('/signup', (req, res) => {
   res.status(410).json({
     error: 'Accounts are created with Google. Use "Continue with Google" to sign up.',
     code: 'google_only',
+  });
+});
+
+/**
+ * What this deployment will send Google, so a redirect_uri_mismatch can be fixed without
+ * guessing. Public on purpose: it is not a secret, and the person hitting the error is
+ * usually the one who needs it.
+ */
+router.get('/google-info', (req, res) => {
+  res.json({
+    configured: googleSignInConfigured(),
+    origin: publicOrigin(),
+    signInRedirectUri: identityRedirectUri(),
+    calendarRedirectUri: calendarRedirectUri(),
+    message:
+      'Both of these must be listed, character for character, under "Authorised redirect URIs" on the Google OAuth client.',
+  });
+});
+
+/**
+ * The demo sign-in buttons.
+ *
+ * Only answers when `npm run demo:seed` has actually created the accounts, and it is the
+ * credentials that are returned — so this exists for a demo deployment and stays silent on
+ * one that never ran the seed.
+ */
+router.get('/demo-accounts', async (req, res) => {
+  const seed = await readDemoSeed();
+
+  if (!seed) {
+    return res.status(404).json({ error: 'No demo accounts on this deployment' });
+  }
+
+  return res.json({
+    seededAt: seed.seededAt,
+    accounts: seed.accounts.map((account) => ({
+      key: account.key,
+      label: account.label,
+      summary: account.summary,
+      name: account.name,
+      email: account.email,
+      password: account.password,
+    })),
   });
 });
 

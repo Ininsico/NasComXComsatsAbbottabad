@@ -73,6 +73,11 @@ export const api = {
   health: () => request('/api/health'),
   login: (credentials) => request('/api/auth/login', { method: 'POST', body: credentials }),
   me: (token) => request('/api/auth/me', { token }),
+
+  /** The demo buttons. 404s when this deployment never ran `npm run demo:seed`. */
+  demoAccounts: () => request('/api/auth/demo-accounts'),
+  /** The exact callback URLs this server sends Google, so a mismatch can be fixed. */
+  googleInfo: () => request('/api/auth/google-info'),
   adminOverview: (token) => request('/api/admin/overview', { token }),
   adminMetrics: (token) => request('/api/admin/metrics', { token }),
 
