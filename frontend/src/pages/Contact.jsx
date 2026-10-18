@@ -43,13 +43,16 @@ export default function Contact() {
     setSending(true);
 
     try {
-      await api.demoRequest(form);
+      const result = await api.demoRequest(form);
+
       setSent(true);
       setForm(EMPTY_FORM);
       showToast({
         tone: 'success',
         title: 'Request received',
-        message: 'It is in the pipeline — we reply within one working day.',
+        message: result?.workspace?.name
+          ? `It is in the ${result.workspace.name} pipeline — we reply within one working day.`
+          : 'It is in the pipeline — we reply within one working day.',
       });
     } catch (error) {
       showToast({ tone: 'error', title: 'Could not send', message: error.message });

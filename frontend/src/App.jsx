@@ -6,6 +6,7 @@ import ProtectedRoute from './components/ProtectedRoute.jsx';
 import PublicOnlyRoute from './components/PublicOnlyRoute.jsx';
 import ScrollToTop from './components/ScrollToTop.jsx';
 import About from './pages/About.jsx';
+import AcceptInvite from './pages/AcceptInvite.jsx';
 import Admin from './pages/Admin.jsx';
 import Appointments from './pages/Appointments.jsx';
 import Audit from './pages/Audit.jsx';
@@ -58,6 +59,10 @@ export default function App() {
 
         <Route path="login" element={<Login />} />
         <Route path="signup" element={<Signup />} />
+
+        {/* Where an emailed invitation lands: the first-time person signs up here and is
+            created inside the inviting workspace. */}
+        <Route path="accept-invite" element={<AcceptInvite />} />
 
         {/* Where the Google sign-in callback lands. Public by design: the session only
             exists once the token in the fragment has been adopted. */}

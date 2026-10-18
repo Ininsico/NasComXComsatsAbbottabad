@@ -80,6 +80,10 @@ export const api = {
   instantLoginInfo: () => request('/api/auth/instant-login'),
   instantLogin: (role) =>
     request('/api/auth/instant-login', { method: 'POST', body: role ? { role } : undefined }),
+  /** The invitation behind an emailed link, and accepting it. */
+  invitationInfo: (invitationToken) =>
+    request(`/api/auth/invitation?token=${encodeURIComponent(invitationToken)}`),
+  acceptInvite: (body) => request('/api/auth/accept-invite', { method: 'POST', body }),
   adminOverview: (token) => request('/api/admin/overview', { token }),
   adminMetrics: (token) => request('/api/admin/metrics', { token }),
   adminUsers: (token) => request('/api/admin/users', { token }),

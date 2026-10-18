@@ -539,7 +539,7 @@ export default function WorkspaceSettings() {
         </div>
       </section>
 
-      <section className="card" style={{ marginBottom: '1.25rem' }}>
+      <section className="card" id="custom-fields" style={{ marginBottom: '1.25rem' }}>
         <span className="label-micro">Custom fields</span>
         <h3 style={{ marginTop: '0.25rem' }}>Extra fields on every opportunity</h3>
         <p className="hint">
@@ -872,23 +872,39 @@ export default function WorkspaceSettings() {
               event.preventDefault();
               const data = new FormData(event.target);
 
-              void run(
-                'invite',
-                async () => {
-                  await workspaceApi.inviteMember(token, {
-                    email: data.get('email'),
-                    level: data.get('level'),
-                    roleId: data.get('roleId') || null,
+              void run('invite', async () => {
+                const result = await workspaceApi.inviteMember(token, {
+                  email: data.get('email'),
+                  level: data.get('level'),
+                  roleId: data.get('roleId') || null,
+                });
+
+                event.target.reset();
+
+                // A first-time address gets an emailed invitation instead of an immediate
+                // membership, so say which of the two happened — and hand over the link if
+                // the provider refused the email.
+                if (result?.invited) {
+                  showToast({
+                    tone: result.emailed ? 'success' : 'warning',
+                    title: result.emailed
+                      ? `Invitation emailed to ${result.email}`
+                      : 'Invitation created, but the email did not go out',
+                    message: result.emailed
+                      ? 'They sign up from the link and land in this workspace with the level you chose.'
+                      : `Send them this link yourself: ${result.link}`,
                   });
-                  event.target.reset();
-                },
-                'Member invited',
-              );
+                } else {
+                  showToast({ tone: 'success', title: 'Member added to the workspace' });
+                }
+              });
             }}
           >
             <span className="label-micro">Invite someone</span>
             <p className="hint">
-              Accounts are created with Google, so they sign in once and you add that address here.
+              Type any address. An existing account is added straight away; a new address gets an
+              emailed invitation to sign up — and signs up inside this workspace with the level you
+              pick here.
             </p>
 
             <div className="grid grid-3">
@@ -1087,6 +1103,41 @@ export default function WorkspaceSettings() {
           On leave or Offline immediately reassigns their unacknowledged leads — acknowledged ones
           stay with them.
         </p>
+
+        {(state.invitations ?? []).length > 0 ? (
+          <div className="card" style={{ marginTop: '1rem' }}>
+            <span className="label-micro">Invitations waiting</span>
+            <p className="hint">
+              These addresses have an emailed link. They appear as members the moment they sign up
+              from it.
+            </p>
+
+            <table className="table" style={{ marginTop: '0.5rem' }}>
+              <thead>
+                <tr>
+                  <th scope="col">Email</th>
+                  <th scope="col">Level</th>
+                  <th scope="col">Expires</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(state.invitations ?? []).map((invitation) => (
+                  <tr key={invitation.id}>
+                    <th scope="row">{invitation.email}</th>
+                    <td>{invitation.level}</td>
+                    <td>
+                      {invitation.expired ? (
+                        <span className="pill pill--danger">expired</span>
+                      ) : (
+                        <span className="hint">{new Date(invitation.expiresAt).toLocaleDateString()}</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
       </section>
     </>
   );

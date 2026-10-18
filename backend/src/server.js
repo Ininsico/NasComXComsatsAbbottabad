@@ -85,9 +85,9 @@ app.listen(config.port, () => {
 
   setWhatsAppHandler(createWhatsAppHandler());
 
-  // Auto-connect when a linked session exists, so a scan is a one-time step.
-  // Without one we stay out of the way, so `whatsapp:pair` never fights this
-  // process for the same browser profile.
+  // Auto-connect when a linked session exists, so a scan is a one-time step. Workspace
+  // sessions count too: each tenant links its own number, and a restart must bring those
+  // back, otherwise inbound messages stop becoming leads until someone presses Start.
   const session = sessionInfo();
 
   if (config.whatsapp.enabled || session.paired) {
@@ -96,5 +96,17 @@ app.listen(config.port, () => {
     console.log(
       '[whatsapp] no linked session — link one with: npm --prefix backend run whatsapp:pair',
     );
+  }
+
+  const { readdir } = await import('node:fs/promises');
+  const profiles = await readdir(config.whatsapp.sessionPath).catch(() => []);
+
+  for (const entry of profiles.filter((name) => name.startsWith('session-ws-'))) {
+    const workspaceId = entry.slice('session-ws-'.length);
+
+    if (!sessionInfo(workspaceId).paired) continue;
+
+    void startWhatsApp(workspaceId);
+    console.log(`[whatsapp] workspace ${workspaceId} has a linked session — connecting it`);
   }
 });

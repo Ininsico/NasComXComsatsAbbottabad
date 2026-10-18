@@ -1,8 +1,9 @@
 import { Router } from 'express';
 import { config } from '../config.js';
-import { issueToken, requireAuth, verifyPassword } from '../lib/auth.js';
+import { issueToken, hashPassword, requireAuth, verifyPassword } from '../lib/auth.js';
 import { redirectUri as calendarRedirectUri } from '../lib/calendar.js';
 import { ensureWorkspaceForUser } from '../lib/context.js';
+import { acceptInvitation, describeInvitation, findInvitation, findPendingInvitationForEmail } from '../lib/invitations.js';
 import {
   authorizationUrl,
   consumeState,
@@ -119,6 +120,82 @@ router.post('/instant-login', async (req, res) => {
   return res.json({ token: issueToken(admin), user: toPublicUser(admin) });
 });
 
+/**
+ * The invitation behind a link. Public on purpose: the token in the URL is the only thing
+ * that identifies the person, and it reveals just the workspace, the level and the role they
+ * were invited with — never another member's data.
+ */
+router.get('/invitation', async (req, res) => {
+  const { invitation, error } = await findInvitation(String(req.query.token ?? ''));
+
+  if (error) return res.status(404).json({ error });
+
+  const described = await describeInvitation(invitation);
+
+  return res.json({
+    invitation: described,
+    hasAccount: Boolean(await findUserByEmail(invitation.email)),
+  });
+});
+
+/**
+ * Accepting an invitation. A first-time person signs up here — which is the point of the
+ * email: the account is born inside the inviting workspace with the invited level and role,
+ * so they never see an empty workspace of their own. An existing account must prove itself
+ * with its password; a Google-only account is told to continue with Google, which accepts
+ * the invitation in the same pass.
+ */
+router.post('/accept-invite', async (req, res) => {
+  const token = String(req.body?.token ?? '');
+  const { invitation, error } = await findInvitation(token);
+
+  if (error) return res.status(404).json({ error });
+
+  let user = await findUserByEmail(invitation.email);
+
+  if (!user) {
+    const name = String(req.body?.name ?? '').trim();
+    const password = String(req.body?.password ?? '');
+    const errors = {};
+
+    if (name.length < 2) errors.name = 'Enter your full name';
+    if (password.length < 8) errors.password = 'Use at least 8 characters';
+
+    if (Object.keys(errors).length > 0) {
+      return res.status(400).json({ error: 'Please fix the highlighted fields', fields: errors });
+    }
+
+    user = await createUser({
+      name,
+      email: invitation.email,
+      passwordHash: await hashPassword(password),
+      role: 'user',
+    });
+  } else if (user.passwordHash) {
+    if (!verifyPassword(String(req.body?.password ?? ''), user.passwordHash)) {
+      return res.status(401).json({
+        error: `${invitation.email} already has an account. Enter its password to accept the invitation.`,
+        fields: { password: 'Wrong password' },
+      });
+    }
+  } else {
+    return res.status(409).json({
+      error: `${invitation.email} signs in with Google. Continue with Google and the invitation is accepted automatically.`,
+      code: 'google_only',
+    });
+  }
+
+  const accepted = await acceptInvitation({ token, user });
+
+  if (accepted.error) return res.status(409).json({ error: accepted.error });
+
+  return res.json({
+    token: issueToken(user),
+    user: toPublicUser(user),
+    workspace: (await describeInvitation(invitation)).workspaceName,
+  });
+});
+
 /** Step one of the Google flow: send the browser to Google's consent screen. */
 router.get('/google', (req, res) => {
   if (!googleSignInConfigured()) {
@@ -173,14 +250,31 @@ router.get('/google/callback', async (req, res) => {
       created = true;
     }
 
-    // Registration and sign-in are the same path: the first time we see an address, it
-    // gets its own workspace as Owner, with default settings — so a new customer lands on
-    // their own pipeline rather than someone else's.
+    // An invitation waiting for this address wins over a fresh workspace: the person who
+    // invited them already decided the workspace, level and role. Without one, a first-time
+    // address gets its own workspace as Owner so a new customer lands on their own pipeline.
+    const pending = await findPendingInvitationForEmail(identity.email);
+
+    if (pending) {
+      const accepted = await acceptInvitation({ token: pending.token, user });
+
+      if (!accepted.error) {
+        const invited = await describeInvitation(pending);
+
+        return back({
+          token: issueToken(user),
+          created: created ? '1' : '0',
+          invited: '1',
+          workspace: invited.workspaceName,
+        });
+      }
+    }
+
     const { workspace } = await ensureWorkspaceForUser(user, {
       workspaceName: created ? `${user.name}'s workspace` : undefined,
     });
 
-    return back({ token: issueToken(user), created: created ? '1' : '0', workspace: workspace.name });
+    return back({ token: issueToken(user), created: created ? '1' : '0', invited: '0', workspace: workspace.name });
   } catch (error) {
     console.error(`[auth:google] ${error.message}`);
     return fail(error.message);

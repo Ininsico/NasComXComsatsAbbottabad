@@ -1,4 +1,4 @@
-import { CircleCheckBig, Clock, Download, Plus, Search, TriangleAlert, Zap } from 'lucide-react';
+import { CircleCheckBig, Clock, Download, Plus, Search, SlidersHorizontal, TriangleAlert, Zap } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/authContext.js';
@@ -268,6 +268,10 @@ export default function Crm() {
               {exporting ? 'Exporting…' : 'Export CSV'}
             </button>
           ) : null}
+          <Link className="btn btn-secondary btn-sm" to="/settings#custom-fields">
+            <SlidersHorizontal size={14} aria-hidden="true" />
+            Custom fields
+          </Link>
           {canCreate ? (
             <button type="button" className="btn btn-primary btn-sm" onClick={() => setShowForm((open) => !open)}>
               <Plus size={14} aria-hidden="true" />

@@ -9,6 +9,8 @@ import { createRole, findRole, listRoles, removeRole, updateRole } from '../lib/
 import { getSettings, saveSettings } from '../lib/settings.js';
 import { findUserByEmail } from '../lib/store.js';
 import { createMember } from '../lib/members.js';
+import { invitationEmail, sendEmail } from '../lib/email.js';
+import { createInvitation, invitationLink, listInvitations } from '../lib/invitations.js';
 
 const router = Router();
 
@@ -17,6 +19,7 @@ router.use(requireAuth, workspaceContext);
 router.get('/', async (req, res) => {
   const settings = await getSettings(req.workspace.id);
   const members = await listMembers(req.workspace.id);
+  const invitations = await listInvitations(req.workspace.id);
 
   res.json({
     workspace: req.workspace,
@@ -25,6 +28,19 @@ router.get('/', async (req, res) => {
     members: await Promise.all(
       members.map(async (member) => describe(member, await permissionsFor(member))),
     ),
+    // People who have been invited and have not signed up yet, so the team page can show
+    // them as pending rather than pretending the invitation vanished.
+    invitations: invitations
+      .filter((row) => !row.acceptedAt)
+      .map((row) => ({
+        id: row.id,
+        email: row.email,
+        level: row.level,
+        roleId: row.roleId,
+        createdAt: row.createdAt,
+        expiresAt: row.expiresAt,
+        expired: Date.parse(row.expiresAt) < Date.now(),
+      })),
     levels: LEVELS.map((level) => ({ value: level, label: LEVEL_LABELS[level] })),
     permissions: PERMISSIONS,
   });
@@ -119,9 +135,45 @@ router.post('/members', requirePermission('assignment.manage'), async (req, res)
 
   const user = await findUserByEmail(email);
 
+  // No account yet: the invitation IS their signup. Level and role are fixed here, so
+  // accepting the emailed link creates the membership directly — a first-time person lands
+  // in THIS workspace rather than an empty one of their own.
   if (!user) {
-    return res.status(404).json({
-      error: 'No account with that address yet. Ask them to sign in with Google once, then invite them.',
+    const invitation = await createInvitation({
+      workspaceId: req.workspace.id,
+      email,
+      level,
+      roleId,
+      invitedBy: req.user.name ?? req.user.email,
+    });
+
+    const link = invitationLink(invitation.token);
+    const role = roleId ? await findRole(roleId, req.workspace.id) : null;
+    const mail = invitationEmail({
+      workspaceName: req.workspace.name,
+      level,
+      roleName: role?.name ?? null,
+      link,
+      invitedBy: req.user.name ?? 'The workspace owner',
+    });
+    const emailed = await sendEmail({ to: email, ...mail });
+
+    await audit({
+      workspaceId: req.workspace.id,
+      actorId: req.user.id,
+      action: 'member.invite.sent',
+      target: invitation.id,
+      metadata: { email, level, roleId, emailed: emailed.sent, emailError: emailed.error ?? null },
+    });
+
+    return res.status(201).json({
+      invited: true,
+      email,
+      level,
+      link,
+      emailed: emailed.sent,
+      emailError: emailed.error ?? null,
+      expiresAt: invitation.expiresAt,
     });
   }
 
@@ -135,8 +187,6 @@ router.post('/members', requirePermission('assignment.manage'), async (req, res)
           : 'That account already belongs to another workspace',
     });
   }
-
-  const roleId = req.body?.roleId ? String(req.body.roleId) : null;
 
   if (roleId && !(await findRole(roleId, req.workspace.id))) {
     return res.status(400).json({ error: 'No such role in this workspace' });
@@ -161,6 +211,25 @@ router.post('/members', requirePermission('assignment.manage'), async (req, res)
   });
 
   return res.status(201).json({ member: describe(member, await permissionsFor(member)) });
+});
+
+/** Invitations that have not been accepted yet, so the team page can show them as pending. */
+router.get('/invitations', requirePermission('assignment.manage'), async (req, res) => {
+  const rows = await listInvitations(req.workspace.id);
+
+  res.json({
+    invitations: rows
+      .filter((row) => !row.acceptedAt)
+      .map((row) => ({
+        id: row.id,
+        email: row.email,
+        level: row.level,
+        roleId: row.roleId,
+        createdAt: row.createdAt,
+        expiresAt: row.expiresAt,
+        expired: Date.parse(row.expiresAt) < Date.now(),
+      })),
+  });
 });
 
 router.patch('/members/:id', requirePermission('assignment.manage'), async (req, res) => {

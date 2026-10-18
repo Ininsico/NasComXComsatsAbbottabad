@@ -80,6 +80,9 @@ router.get('/status', requirePermission('crm.view'), async (req, res) => {
     configured: googleConfigured(),
     redirectUri: redirectUri(),
     connected: Boolean(connection),
+    status: connection ? (connection.status ?? 'connected') : null,
+    needsReconnection: connection?.status === 'needs_reconnection',
+    lastError: connection?.lastError ?? null,
     account: connection?.account ?? null,
     connectedAt: connection?.connectedAt ?? null,
     lastSyncAt: connection?.lastSyncAt ?? null,
@@ -147,9 +150,18 @@ router.post('/book', requirePermission('crm.edit'), async (req, res) => {
 
   const connection = await connectionFor(req.workspace.id);
 
-  if (connection?.status === 'needs_reconnection') {
+  if (!connection) {
+    return res.status(409).json({
+      error:
+        'Google Calendar is not connected for this workspace. Open Integrations, connect Google, then book again.',
+      code: 'calendar_not_connected',
+    });
+  }
+
+  if (connection.status === 'needs_reconnection') {
     return res.status(409).json({
       error: 'The Google Calendar connection needs reconnecting. Reconnect it on the Integrations page, then book again.',
+      code: 'calendar_needs_reconnection',
     });
   }
 

@@ -58,7 +58,12 @@ router.post('/demo-request', async (req, res) => {
     return res.status(400).json({ error: 'Check the form', fields: result.errors });
   }
 
-  return res.status(201).json({ ok: true });
+  return res.status(201).json({
+    ok: true,
+    // Named in the reply so the public form can say where the enquiry landed, and a demo can
+    // prove which workspace receives public intake.
+    workspace: { id: workspace.id, name: workspace.name },
+  });
 });
 
 router.use(requireAuth, workspaceContext);

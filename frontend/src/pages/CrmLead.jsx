@@ -21,6 +21,7 @@ export default function CrmLead() {
   const [error, setError] = useState('');
   const [activity, setActivity] = useState(EMPTY_ACTIVITY);
   const [slot, setSlot] = useState('');
+  const [calendar, setCalendar] = useState(null);
   const [busy, setBusy] = useState(false);
 
   const fetchAll = useCallback(
@@ -65,6 +66,23 @@ export default function CrmLead() {
 
     return () => clearInterval(timer);
   }, []);
+
+  // Booking writes to the workspace's Google Calendar, so the page checks the connection
+  // first and says what to do instead of failing at the last moment.
+  useEffect(() => {
+    let active = true;
+
+    calendarApi
+      .status(token)
+      .then((payload) => {
+        if (active) setCalendar(payload);
+      })
+      .catch(() => {});
+
+    return () => {
+      active = false;
+    };
+  }, [token]);
 
   async function act(action, successMessage) {
     setBusy(true);
@@ -289,26 +307,54 @@ export default function CrmLead() {
 
         <div className="card">
           <span className="label-micro">Book an appointment</span>
-          <p className="hint">Checks the connected Google Calendar for conflicts before booking.</p>
 
-          <form className="form" onSubmit={book}>
-            <div className="field">
-              <label htmlFor="lead-slot">Date and time</label>
-              <input
-                id="lead-slot"
-                className="input"
-                type="datetime-local"
-                value={slot}
-                onChange={(event) => setSlot(event.target.value)}
-                disabled={!canBook}
-              />
-            </div>
+          {calendar && !calendar.connected ? (
+            <>
+              <p className="hint">
+                Google Calendar is not connected for this workspace, so an appointment cannot be
+                booked yet. Connect it once and every booking lands in the real calendar.
+              </p>
+              <Link className="btn btn-secondary" to="/integrations">
+                <CalendarPlus size={15} aria-hidden="true" />
+                Connect Google Calendar
+              </Link>
+            </>
+          ) : calendar?.needsReconnection ? (
+            <>
+              <p className="hint">
+                The Google Calendar connection needs reconnecting
+                {calendar.lastError ? ` (${calendar.lastError})` : ''}. Bookings are refused until
+                then.
+              </p>
+              <Link className="btn btn-secondary" to="/integrations">
+                <CalendarPlus size={15} aria-hidden="true" />
+                Reconnect Google Calendar
+              </Link>
+            </>
+          ) : (
+            <>
+              <p className="hint">Checks the connected Google Calendar for conflicts before booking.</p>
 
-            <button type="submit" className="btn btn-primary" disabled={busy || !canBook}>
-              <CalendarPlus size={15} aria-hidden="true" />
-              Book 30 minutes
-            </button>
-          </form>
+              <form className="form" onSubmit={book}>
+                <div className="field">
+                  <label htmlFor="lead-slot">Date and time</label>
+                  <input
+                    id="lead-slot"
+                    className="input"
+                    type="datetime-local"
+                    value={slot}
+                    onChange={(event) => setSlot(event.target.value)}
+                    disabled={!canBook}
+                  />
+                </div>
+
+                <button type="submit" className="btn btn-primary" disabled={busy || !canBook}>
+                  <CalendarPlus size={15} aria-hidden="true" />
+                  Book 30 minutes
+                </button>
+              </form>
+            </>
+          )}
         </div>
       </section>
 
