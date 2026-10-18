@@ -2,7 +2,6 @@ import { Router } from 'express';
 import { issueToken, requireAuth, verifyPassword } from '../lib/auth.js';
 import { redirectUri as calendarRedirectUri } from '../lib/calendar.js';
 import { ensureWorkspaceForUser } from '../lib/context.js';
-import { readDemoSeed } from '../lib/demoAccounts.js';
 import {
   authorizationUrl,
   consumeState,
@@ -42,33 +41,6 @@ router.get('/google-info', (req, res) => {
     calendarRedirectUri: calendarRedirectUri(),
     message:
       'Both of these must be listed, character for character, under "Authorised redirect URIs" on the Google OAuth client.',
-  });
-});
-
-/**
- * The demo sign-in buttons.
- *
- * Only answers when `npm run demo:seed` has actually created the accounts, and it is the
- * credentials that are returned — so this exists for a demo deployment and stays silent on
- * one that never ran the seed.
- */
-router.get('/demo-accounts', async (req, res) => {
-  const seed = await readDemoSeed();
-
-  if (!seed) {
-    return res.status(404).json({ error: 'No demo accounts on this deployment' });
-  }
-
-  return res.json({
-    seededAt: seed.seededAt,
-    accounts: seed.accounts.map((account) => ({
-      key: account.key,
-      label: account.label,
-      summary: account.summary,
-      name: account.name,
-      email: account.email,
-      password: account.password,
-    })),
   });
 });
 

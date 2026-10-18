@@ -1,7 +1,6 @@
 import { createApp } from './app.js';
 import { config } from './config.js';
 import { redirectUri as calendarRedirectUri } from './lib/calendar.js';
-import { readDemoSeed } from './lib/demoAccounts.js';
 import { startEscalationTicker } from './lib/escalation.js';
 import { identityRedirectUri } from './lib/googleIdentity.js';
 import { seedProductKnowledge } from './lib/knowledge.js';
@@ -43,12 +42,6 @@ console.log(`Google sign-in: ${config.google.clientId && config.google.clientSec
 console.log(`  sign-in callback: ${identityRedirectUri()}`);
 console.log(`  calendar callback: ${calendarRedirectUri()}`);
 console.log('  Both must be listed under "Authorised redirect URIs" on that OAuth client.');
-
-const demo = await readDemoSeed();
-
-if (demo) {
-  console.log(`Demo sign-in buttons: offered (${demo.accounts.length} account(s), seeded ${demo.seededAt}).`);
-}
 
 const app = createApp();
 

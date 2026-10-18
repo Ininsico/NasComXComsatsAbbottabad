@@ -22,7 +22,6 @@ export default function Login() {
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [apiStatus, setApiStatus] = useState('checking');
-  const [demoAccounts, setDemoAccounts] = useState([]);
   const [googleInfo, setGoogleInfo] = useState(null);
 
   useEffect(() => {
@@ -37,14 +36,7 @@ export default function Login() {
         if (active) setApiStatus('down');
       });
 
-    // Both are optional: a deployment with no demo seed returns 404, and that is fine.
-    api
-      .demoAccounts()
-      .then((payload) => {
-        if (active) setDemoAccounts(payload.accounts ?? []);
-      })
-      .catch(() => {});
-
+    // So the redirect_uri_mismatch help can name the exact URLs this server sends.
     api
       .googleInfo()
       .then((payload) => {
@@ -145,34 +137,6 @@ export default function Login() {
               </p>
             ) : null}
           </details>
-        ) : null}
-
-        {demoAccounts.length > 0 ? (
-          <>
-            <p className="auth__or">or jump straight in</p>
-
-            <div className="instant-login">
-              {demoAccounts.map((account) => (
-                <button
-                  key={account.key}
-                  type="button"
-                  className="instant-login__button"
-                  disabled={submitting}
-                  onClick={() =>
-                    signIn({ email: account.email, password: account.password }, account.summary)
-                  }
-                >
-                  <strong>{account.label}</strong>
-                  <em>{account.summary}</em>
-                </button>
-              ))}
-            </div>
-
-            <p className="hint" style={{ textAlign: 'center' }}>
-              Demo accounts created by <code>npm run demo:seed</code>. Each starts at a different
-              level, so the permissions differ.
-            </p>
-          </>
         ) : null}
 
         <p className="auth__or">or sign in with a password</p>

@@ -31,6 +31,8 @@ lerna-debug.log*
 
 # Runtime data (backend JSON store, uploads)
 backend/data/*.json
+backend/data/*.tmp
+backend/data/.*
 backend/uploads/
 
 # RAG vector store and WhatsApp session
