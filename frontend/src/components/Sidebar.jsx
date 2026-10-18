@@ -2,11 +2,10 @@ import {
   AudioLines,
   ChevronsLeft,
   ChevronsRight,
-  Database,
-  FileText,
   Kanban,
   LayoutDashboard,
   LogOut,
+  ShieldAlert,
   ShieldCheck,
   UserRound,
   Wallet,
@@ -20,26 +19,24 @@ import { ADMIN_ROLE, ROLE_LABELS } from '../data/site.js';
 
 const PORTAL_LINKS = [
   { to: '/crm', label: 'Pipeline', icon: Kanban },
-  { to: '/dashboard', label: 'Overview', icon: LayoutDashboard },
+  { to: '/recovery', label: 'Recovery queue', icon: ShieldAlert },
+  { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/integrations', label: 'Integrations', icon: Zap },
   { to: '/settings', label: 'Workspace', icon: Wrench },
   { to: '/voice', label: 'Voice', icon: AudioLines },
+  { to: '/subscription', label: 'Subscription', icon: Wallet },
   { to: '/profile', label: 'My profile', icon: UserRound },
-  { to: '/knowledge', label: 'Knowledge', icon: Database },
-  { to: '/documents', label: 'Documents', icon: FileText },
-  { to: '/payments', label: 'Payments', icon: Wallet },
 ];
 
-/** Admins land on the console, so Overview would only bounce them there. */
+/** Admins land on the console, so Dashboard would only bounce them there. */
 const ADMIN_PORTAL_LINKS = [
   { to: '/crm', label: 'Pipeline', icon: Kanban },
+  { to: '/recovery', label: 'Recovery queue', icon: ShieldAlert },
   { to: '/integrations', label: 'Integrations', icon: Zap },
   { to: '/settings', label: 'Workspace', icon: Wrench },
   { to: '/voice', label: 'Voice', icon: AudioLines },
+  { to: '/subscription', label: 'Subscription', icon: Wallet },
   { to: '/profile', label: 'My profile', icon: UserRound },
-  { to: '/knowledge', label: 'Knowledge', icon: Database },
-  { to: '/documents', label: 'Documents', icon: FileText },
-  { to: '/payments', label: 'Payments', icon: Wallet },
 ];
 
 const ADMIN_LINKS = [{ to: '/admin', label: 'Admin console', icon: ShieldCheck }];

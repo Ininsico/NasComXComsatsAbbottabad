@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { requireAuth, requireRole } from '../lib/auth.js';
+import { requirePermission, workspaceContext } from '../lib/context.js';
 import {
   logoutWhatsApp,
   sendWhatsAppMessage,
@@ -10,28 +11,38 @@ import {
 
 const router = Router();
 
-router.use(requireAuth, requireRole('admin'));
+router.use(requireAuth, workspaceContext);
 
+/**
+ * The deployment's own number, used by the public website's auto-reply. Deliberately
+ * outside the workspace permission gate: it belongs to the platform, not to a tenant.
+ */
+router.get('/main', requireRole('admin'), (req, res) => {
+  res.json(whatsappStatus('main'));
+});
+
+router.use(requirePermission('integrations.manage'));
+
+/** Everything below acts on the caller's own workspace. */
 router.get('/status', (req, res) => {
-  res.json(whatsappStatus());
+  res.json(whatsappStatus(req.workspace.id));
 });
 
 router.post('/start', async (req, res) => {
   try {
-    const status = await startWhatsApp();
-    return res.json(status);
+    return res.json(await startWhatsApp(req.workspace.id));
   } catch (error) {
     return res.status(502).json({ error: error.message });
   }
 });
 
 router.post('/stop', async (req, res) => {
-  res.json(await stopWhatsApp());
+  res.json(await stopWhatsApp(req.workspace.id));
 });
 
-/** Forget the stored session; the next start needs a fresh scan. */
+/** Forget this workspace's session; the next start needs a fresh scan. */
 router.post('/logout', async (req, res) => {
-  res.json(await logoutWhatsApp());
+  res.json(await logoutWhatsApp(req.workspace.id));
 });
 
 router.post('/send', async (req, res) => {
@@ -42,7 +53,7 @@ router.post('/send', async (req, res) => {
   if (text.length < 1) return res.status(400).json({ error: 'Provide a message' });
 
   try {
-    const sent = await sendWhatsAppMessage(to, text.slice(0, 4000));
+    const sent = await sendWhatsAppMessage(req.workspace.id, to, text.slice(0, 4000));
     return res.status(201).json(sent);
   } catch (error) {
     return res.status(502).json({ error: error.message });

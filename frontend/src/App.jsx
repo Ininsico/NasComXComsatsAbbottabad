@@ -12,17 +12,17 @@ import Crm from './pages/Crm.jsx';
 import CrmLead from './pages/CrmLead.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import Deploy from './pages/Deploy.jsx';
-import Documents from './pages/Documents.jsx';
 import Features from './pages/Features.jsx';
 import Home from './pages/Home.jsx';
 import Integrations from './pages/Integrations.jsx';
-import Knowledge from './pages/Knowledge.jsx';
 import Login from './pages/Login.jsx';
 import NotFound from './pages/NotFound.jsx';
 import Payments from './pages/Payments.jsx';
 import Pricing from './pages/Pricing.jsx';
 import Profile from './pages/Profile.jsx';
+import Recovery from './pages/Recovery.jsx';
 import Signup from './pages/Signup.jsx';
+import Subscription from './pages/Subscription.jsx';
 import Voice from './pages/Voice.jsx';
 import WorkspaceSettings from './pages/WorkspaceSettings.jsx';
 import './App.css';
@@ -63,13 +63,13 @@ export default function App() {
         >
           <Route path="crm" element={<Crm />} />
           <Route path="crm/:id" element={<CrmLead />} />
+          <Route path="recovery" element={<Recovery />} />
+          <Route path="subscription" element={<Subscription />} />
           <Route path="integrations" element={<Integrations />} />
           <Route path="settings" element={<WorkspaceSettings />} />
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="profile" element={<Profile />} />
-          <Route path="knowledge" element={<Knowledge />} />
           <Route path="voice" element={<Voice />} />
-          <Route path="documents" element={<Documents />} />
           <Route path="payments" element={<Payments />} />
           <Route
             path="admin"

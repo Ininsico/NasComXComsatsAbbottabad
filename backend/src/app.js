@@ -9,13 +9,14 @@ import adminRoutes from './routes/admin.js';
 import aiRoutes from './routes/ai.js';
 import assistantRoutes from './routes/assistant.js';
 import authRoutes from './routes/auth.js';
-import campusRoutes from './routes/campus.js';
 import calendarRoutes from './routes/calendar.js';
 import crmRoutes from './routes/crm.js';
+import dashboardRoutes from './routes/dashboard.js';
 import deployRoutes from './routes/deploy.js';
-import documentRoutes from './routes/documents.js';
+import integrationRoutes from './routes/integrations.js';
 import paymentRoutes, { stripeWebhookHandler } from './routes/payments.js';
 import profileRoutes from './routes/profile.js';
+import subscriptionRoutes from './routes/subscriptions.js';
 import whatsappRoutes from './routes/whatsapp.js';
 import workspaceRoutes from './routes/workspace.js';
 
@@ -62,15 +63,22 @@ export function createApp() {
   });
 
   app.use('/api/auth', authRoutes);
-  app.use('/api/campus', campusRoutes);
   app.use('/api/account', accountRoutes);
-  app.use('/api/documents', documentRoutes);
   app.use('/api/admin', adminRoutes);
   app.use('/api/assistant', assistantRoutes);
   app.use('/api/payments', paymentRoutes);
   app.use('/api/profile', profileRoutes);
   app.use('/api/ai', aiRoutes);
   app.use('/api/whatsapp', whatsappRoutes);
+
+  // Every connector a workspace can attach, in one read.
+  app.use('/api/integrations', integrationRoutes);
+
+  // Plan, status, limits and invoices for the workspace.
+  app.use('/api/subscription', subscriptionRoutes);
+
+  // Every figure on the operational dashboard, read at one moment.
+  app.use('/api/dashboard', dashboardRoutes);
 
   // The CRM: leads, pipeline and activity. /demo-request is public so the marketing
   // site's form feeds the pipeline directly.

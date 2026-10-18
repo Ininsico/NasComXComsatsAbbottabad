@@ -19,6 +19,8 @@ export const DEFAULTS = {
     { afterSeconds: 300, to: 'manager' },
   ],
   maxOpenLeads: 5,
+  // A lead nobody has touched for this long shows up in the recovery queue.
+  idleHours: 24,
   timezone: 'Asia/Karachi',
   businessHours: { start: '09:00', end: '18:00', days: [1, 2, 3, 4, 5] },
   // Stage-specific required fields: a lead cannot enter a stage until these are set.
@@ -26,8 +28,8 @@ export const DEFAULTS = {
     { key: 'new', label: 'New', required: [] },
     { key: 'contacted', label: 'Contacted', required: [] },
     { key: 'qualified', label: 'Qualified', required: ['email'] },
-    { key: 'applied', label: 'Applied', required: ['email', 'phone'] },
-    { key: 'enrolled', label: 'Won', required: ['email', 'phone', 'value'] },
+    { key: 'proposal', label: 'Proposal', required: ['email', 'phone'] },
+    { key: 'won', label: 'Won', required: ['email', 'phone', 'value'] },
     { key: 'lost', label: 'Lost', required: [] },
   ],
   customFields: [],

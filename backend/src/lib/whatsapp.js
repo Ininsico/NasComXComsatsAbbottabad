@@ -1,52 +1,80 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
-import { rm, writeFile } from 'node:fs/promises';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { config } from '../config.js';
 
-/** Written after a successful link; its presence is what "already paired" means. */
-const MARKER = () => join(config.whatsapp.sessionPath, '.linked.json');
+/**
+ * WhatsApp, one linked device per scope.
+ *
+ * A scope is either `main` — the deployment's own number, used by the public website's
+ * auto-reply — or a workspace id, so every customer links their own phone and their
+ * messages stay in their account. Sessions never share a browser profile: whatsapp-web.js
+ * keeps them in separate directories under WHATSAPP_SESSION_PATH, which is also what makes
+ * `main` survive a deploy untouched.
+ *
+ * Each live session is a Chromium process, so they are started on demand (someone opens
+ * the integrations page and scans) rather than all at once, and only sessions that are
+ * already linked are restarted on boot.
+ */
 
-const state = {
-  status: 'stopped',
-  qr: null,
-  qrDataUrl: null,
-  lastQrAt: null,
-  me: null,
-  error: null,
-  readyAt: null,
-  received: 0,
-  replied: 0,
-  lastMessageAt: null,
-};
+const MAIN = 'main';
+const MAX_LIVE_SESSIONS = Number(process.env.WHATSAPP_MAX_SESSIONS ?? 4);
 
-let client = null;
+/** scope -> { scope, state, client, starting } */
+const sessions = new Map();
+
 let handler = null;
-let starting = null;
 
-export function whatsappStatus() {
-  return {
-    enabled: config.whatsapp.enabled,
-    sessionPath: config.whatsapp.sessionPath,
-    session: sessionInfo(),
-    ...state,
-  };
+export function isMainScope(scope) {
+  return scope === MAIN;
 }
 
-/**
- * What is on disk for this session.
- *
- * `paired` is driven by a marker written only once the client reaches `ready`,
- * so it is exact: a stored profile that was never linked does not count, and a
- * linked one always does. That lets the API reconnect on boot with no scan while
- * staying out of the way before the first link.
- */
-export function sessionInfo() {
-  const base = join(config.whatsapp.sessionPath, 'session-comsats-portal');
+function clientIdFor(scope) {
+  // The main session keeps its original id so the existing linked device is reused.
+  return isMainScope(scope) ? 'comsats-portal' : `ws-${scope}`;
+}
+
+function profileDir(scope) {
+  return join(config.whatsapp.sessionPath, `session-${clientIdFor(scope)}`);
+}
+
+function markerPath(scope) {
+  return join(profileDir(scope), '.linked.json');
+}
+
+function record(scope) {
+  if (!sessions.has(scope)) {
+    sessions.set(scope, {
+      scope,
+      client: null,
+      starting: null,
+      state: {
+        status: 'stopped',
+        qr: null,
+        qrDataUrl: null,
+        lastQrAt: null,
+        me: null,
+        error: null,
+        readyAt: null,
+        received: 0,
+        replied: 0,
+        lastMessageAt: null,
+        lastReplyAt: null,
+      },
+    });
+  }
+
+  return sessions.get(scope);
+}
+
+/** What is on disk for this scope. `paired` is exact: the marker is only written on ready. */
+export function sessionInfo(scope = MAIN) {
+  const base = profileDir(scope);
 
   let linked = null;
 
   try {
-    linked = JSON.parse(readFileSync(MARKER(), 'utf8'));
+    linked = JSON.parse(readFileSync(markerPath(scope), 'utf8'));
   } catch {
     linked = null;
   }
@@ -70,14 +98,18 @@ export function sessionInfo() {
   const walk = (directory) => {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
       const full = join(directory, entry.name);
-      if (entry.isDirectory()) walk(full);
-      else {
-        files += 1;
-        try {
-          bytes += statSync(full).size;
-        } catch {
-          // file vanished mid-walk
-        }
+
+      if (entry.isDirectory()) {
+        walk(full);
+        continue;
+      }
+
+      files += 1;
+
+      try {
+        bytes += statSync(full).size;
+      } catch {
+        // file vanished mid-walk
       }
     }
   };
@@ -100,52 +132,55 @@ export function sessionInfo() {
   };
 }
 
-/** Stops the client and deletes the stored session, so the next start re-pairs. */
-export async function logoutWhatsApp() {
-  await stopWhatsApp();
+export function whatsappStatus(scope = MAIN) {
+  const session = record(scope);
 
-  await rm(join(config.whatsapp.sessionPath, 'session-comsats-portal'), {
-    recursive: true,
-    force: true,
-  });
-  await rm(MARKER(), { force: true });
-
-  state.me = null;
-  state.readyAt = null;
-
-  return whatsappStatus();
+  return {
+    scope,
+    enabled: config.whatsapp.enabled,
+    clientId: clientIdFor(scope),
+    sessionPath: config.whatsapp.sessionPath,
+    session: sessionInfo(scope),
+    liveSessions: [...sessions.values()].filter((entry) => entry.client).length,
+    maxLiveSessions: MAX_LIVE_SESSIONS,
+    ...session.state,
+  };
 }
 
 export function setWhatsAppHandler(next) {
   handler = next;
 }
 
-/**
- * Boots a whatsapp-web.js client with a persisted session.
- *
- * The first run emits a QR that must be scanned from the admin console; after
- * that the session on disk is reused. Nothing here is fatal — if the library or
- * a browser is missing the status simply reports why.
- */
-export async function startWhatsApp() {
-  if (client) return whatsappStatus();
+/** Boots a client for this scope. The first run emits a QR that must be scanned. */
+export async function startWhatsApp(scope = MAIN) {
+  const session = record(scope);
 
-  if (starting) {
-    await starting;
-    return whatsappStatus();
+  if (session.client) return whatsappStatus(scope);
+
+  if (session.starting) {
+    await session.starting;
+    return whatsappStatus(scope);
   }
 
-  starting = (async () => {
-    state.status = 'starting';
-    state.error = null;
+  const live = [...sessions.values()].filter((entry) => entry.client).length;
+
+  if (live >= MAX_LIVE_SESSIONS) {
+    session.state.status = 'error';
+    session.state.error = `Too many WhatsApp sessions are live (${live}/${MAX_LIVE_SESSIONS}). Stop one before starting another.`;
+    return whatsappStatus(scope);
+  }
+
+  session.starting = (async () => {
+    session.state.status = 'starting';
+    session.state.error = null;
 
     let library;
 
     try {
       library = await import('whatsapp-web.js');
     } catch (error) {
-      state.status = 'error';
-      state.error = `whatsapp-web.js is not installed (${error.message})`;
+      session.state.status = 'error';
+      session.state.error = `whatsapp-web.js is not installed (${error.message})`;
       return;
     }
 
@@ -156,10 +191,12 @@ export async function startWhatsApp() {
     // naming the host and pid that created them. A recreated container has a new
     // hostname, so Chromium refuses to start against that profile and the client dies
     // silently. Clearing them before launch is what lets a deploy keep the session.
-    const profileDir = join(config.whatsapp.sessionPath, 'session-comsats-portal');
+    const profile = profileDir(scope);
+
+    await mkdir(profile, { recursive: true });
 
     for (const name of ['SingletonLock', 'SingletonCookie', 'SingletonSocket']) {
-      await rm(join(profileDir, name), { force: true, recursive: true });
+      await rm(join(profile, name), { force: true, recursive: true });
     }
 
     let qrcode = null;
@@ -171,8 +208,8 @@ export async function startWhatsApp() {
       qrcode = null;
     }
 
-    client = new Client({
-      authStrategy: new LocalAuth({ clientId: 'comsats-portal', dataPath: config.whatsapp.sessionPath }),
+    session.client = new Client({
+      authStrategy: new LocalAuth({ clientId: clientIdFor(scope), dataPath: config.whatsapp.sessionPath }),
       puppeteer: {
         headless: true,
         ...(config.whatsapp.chromePath ? { executablePath: config.whatsapp.chromePath } : {}),
@@ -180,114 +217,131 @@ export async function startWhatsApp() {
       },
     });
 
-    client.on('qr', async (qr) => {
-      state.status = 'qr';
-      state.qr = qr;
-      state.lastQrAt = new Date().toISOString();
-      state.qrDataUrl = qrcode
+    session.client.on('qr', async (qr) => {
+      session.state.status = 'qr';
+      session.state.qr = qr;
+      session.state.lastQrAt = new Date().toISOString();
+      session.state.qrDataUrl = qrcode
         ? await qrcode.toDataURL(qr, { margin: 1, width: 320 }).catch(() => null)
         : null;
-      console.log('[whatsapp] scan the QR in the admin console to link this device');
+      console.log(`[whatsapp:${scope}] scan the QR to link this device`);
     });
 
-    client.on('authenticated', () => {
-      state.status = 'authenticated';
-      state.qr = null;
-      state.qrDataUrl = null;
+    session.client.on('authenticated', () => {
+      session.state.status = 'authenticated';
+      session.state.qr = null;
+      session.state.qrDataUrl = null;
     });
 
-    client.on('ready', async () => {
-      state.status = 'ready';
-      state.qr = null;
-      state.qrDataUrl = null;
-      state.me = client?.info?.wid?._serialized ?? null;
-      state.readyAt = new Date().toISOString();
-      console.log(`[whatsapp] connected as ${state.me}`);
+    session.client.on('ready', async () => {
+      session.state.status = 'ready';
+      session.state.qr = null;
+      session.state.qrDataUrl = null;
+      session.state.me = session.client?.info?.wid?._serialized ?? null;
+      session.state.readyAt = new Date().toISOString();
+      console.log(`[whatsapp:${scope}] connected as ${session.state.me}`);
 
       // Record that this profile is linked, so later boots reconnect without a scan.
       try {
         await writeFile(
-          MARKER(),
-          JSON.stringify({ me: state.me, linkedAt: state.readyAt }, null, 2),
+          markerPath(scope),
+          JSON.stringify({ me: session.state.me, linkedAt: session.state.readyAt, scope }, null, 2),
           'utf8',
         );
       } catch (error) {
-        console.error(`[whatsapp] could not record the session marker: ${error.message}`);
+        console.error(`[whatsapp:${scope}] could not record the session marker: ${error.message}`);
       }
     });
 
-    client.on('auth_failure', (message) => {
-      state.status = 'error';
-      state.error = `Authentication failed: ${message}`;
-      // Never silent: a failed session is the one thing that costs a QR re-scan.
-      console.error(`[whatsapp] authentication failed: ${message}`);
+    session.client.on('auth_failure', (message) => {
+      session.state.status = 'error';
+      session.state.error = `Authentication failed: ${message}`;
+      console.error(`[whatsapp:${scope}] authentication failed: ${message}`);
     });
 
-    client.on('disconnected', (reason) => {
-      state.status = 'disconnected';
-      state.error = `Disconnected: ${reason}`;
-      client = null;
-      console.error(`[whatsapp] disconnected: ${reason}`);
+    session.client.on('disconnected', (reason) => {
+      session.state.status = 'disconnected';
+      session.state.error = `Disconnected: ${reason}`;
+      session.client = null;
+      console.error(`[whatsapp:${scope}] disconnected: ${reason}`);
     });
 
-    client.on('message', async (message) => {
-      state.received += 1;
-      state.lastMessageAt = new Date().toISOString();
+    session.client.on('message', async (message) => {
+      session.state.received += 1;
+      session.state.lastMessageAt = new Date().toISOString();
 
       try {
-        const reply = await handler?.(message);
+        const reply = await handler?.(message, scope);
 
         if (reply) {
           await message.reply(reply);
-          state.replied += 1;
+          session.state.replied += 1;
+          session.state.lastReplyAt = new Date().toISOString();
         }
       } catch (error) {
-        console.error(`[whatsapp] handler failed: ${error.message}`);
+        console.error(`[whatsapp:${scope}] handler failed: ${error.message}`);
       }
     });
 
     try {
-      await client.initialize();
+      await session.client.initialize();
     } catch (error) {
-      state.status = 'error';
-      state.error = error.message;
-      client = null;
-      // Without this line a browser that refuses to start looks like nothing happened.
-      console.error(`[whatsapp] could not start the browser: ${error.message}`);
+      session.state.status = 'error';
+      session.state.error = error.message;
+      session.client = null;
+      console.error(`[whatsapp:${scope}] could not start the browser: ${error.message}`);
     }
   })();
 
   try {
-    await starting;
+    await session.starting;
   } finally {
-    starting = null;
+    session.starting = null;
   }
 
-  return whatsappStatus();
+  return whatsappStatus(scope);
 }
 
-export async function stopWhatsApp() {
-  if (client) {
+export async function stopWhatsApp(scope = MAIN) {
+  const session = record(scope);
+
+  if (session.client) {
     try {
-      await client.destroy();
+      await session.client.destroy();
     } catch {
       // already gone
     }
   }
 
-  client = null;
-  starting = null;
-  state.status = 'stopped';
-  state.qr = null;
-  state.qrDataUrl = null;
-  state.me = null;
+  session.client = null;
+  session.starting = null;
+  session.state.status = 'stopped';
+  session.state.qr = null;
+  session.state.qrDataUrl = null;
+  session.state.me = null;
 
-  return whatsappStatus();
+  return whatsappStatus(scope);
 }
 
-export async function sendWhatsAppMessage(to, text) {
-  if (!client || state.status !== 'ready') {
-    throw new Error('WhatsApp is not connected yet');
+/** Forget the stored session; the next start needs a fresh scan. */
+export async function logoutWhatsApp(scope = MAIN) {
+  await stopWhatsApp(scope);
+
+  await rm(profileDir(scope), { recursive: true, force: true });
+
+  const session = record(scope);
+
+  session.state.me = null;
+  session.state.readyAt = null;
+
+  return whatsappStatus(scope);
+}
+
+export async function sendWhatsAppMessage(scope, to, text) {
+  const session = record(scope);
+
+  if (!session.client || session.state.status !== 'ready') {
+    throw new Error('This WhatsApp session is not connected yet');
   }
 
   const digits = String(to ?? '').replace(/\D/g, '');
@@ -296,8 +350,31 @@ export async function sendWhatsAppMessage(to, text) {
     throw new Error('Provide a phone number in international format');
   }
 
-  const chatId = `${digits}@c.us`;
-  const sent = await client.sendMessage(chatId, text);
+  const chatId = digits.startsWith('0') ? `${digits}@c.us` : `${digits}@c.us`;
+  const sent = await session.client.sendMessage(chatId, text);
 
-  return { id: sent?.id?._serialized ?? null, to: chatId };
+  return { id: sent?.id?._serialized ?? null, to: chatId, scope };
 }
+
+/**
+ * Restart every session that is already linked, so a deploy does not ask anyone to scan
+ * again. Called once on boot; failures are logged and never fatal.
+ */
+export async function resumeLinkedSessions(scopes = [MAIN]) {
+  const resumed = [];
+
+  for (const scope of scopes.slice(0, MAX_LIVE_SESSIONS)) {
+    if (!sessionInfo(scope).paired) continue;
+
+    try {
+      await startWhatsApp(scope);
+      resumed.push(scope);
+    } catch (error) {
+      console.error(`[whatsapp:${scope}] could not resume: ${error.message}`);
+    }
+  }
+
+  return resumed;
+}
+
+export { MAIN as MAIN_SCOPE };

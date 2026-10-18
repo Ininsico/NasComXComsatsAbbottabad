@@ -54,7 +54,7 @@ export async function findIntent(id) {
   return intents.find((intent) => intent.id === id) ?? null;
 }
 
-export async function createIntent({ user, plan, provider = 'crypto', asset, network, address }) {
+export async function createIntent({ user, plan, provider = 'crypto', asset, network, address, workspaceId = null, kind = 'subscription' }) {
   return withLock(async () => {
     const intents = await readAll();
     const tolerancePercent = config.payments.tolerancePercent;
@@ -65,6 +65,8 @@ export async function createIntent({ user, plan, provider = 'crypto', asset, net
       id: randomUUID(),
       reference: `CMX-${createdAt.getTime().toString(36).toUpperCase()}-${randomUUID().slice(0, 4).toUpperCase()}`,
       provider,
+      kind,
+      workspaceId,
       userId: user.id,
       userName: user.name,
       userEmail: user.email,

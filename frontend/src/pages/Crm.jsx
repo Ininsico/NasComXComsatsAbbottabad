@@ -183,7 +183,7 @@ export default function Crm() {
         <article className="metric-tile">
           <span className="label-micro">Conversion</span>
           <strong>{stats?.conversionRate ?? 0}%</strong>
-          <span className="hint">{stats?.byStage?.enrolled ?? 0} won</span>
+          <span className="hint">{stats?.byStage?.won ?? 0} won</span>
         </article>
       </section>
 

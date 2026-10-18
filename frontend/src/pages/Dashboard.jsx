@@ -1,390 +1,270 @@
 import {
-  Bell,
-  BookOpen,
-  Building,
-  CalendarCheck,
-  ClipboardList,
-  CreditCard,
-  GraduationCap,
-  IdCard,
-  RefreshCw,
+  Activity,
+  ArrowRight,
+  Clock,
+  ShieldAlert,
   TrendingUp,
-  UserCog,
+  TriangleAlert,
   Users,
+  Wallet,
+  Zap,
 } from 'lucide-react';
-import { useCallback } from 'react';
-import { Navigate } from 'react-router-dom';
-import AssistantCard from '../components/AssistantCard.jsx';
-import AsyncSection from '../components/AsyncSection.jsx';
+import { useCallback, useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../context/authContext.js';
-import { ADMIN_ROLE } from '../data/site.js';
-import useApiResource from '../hooks/useApiResource.js';
-import { api } from '../lib/api.js';
-import { formatCurrency, formatDate, percent } from '../lib/format.js';
+import { useToast } from '../context/toastContext.js';
+import { dashboardApi } from '../lib/api.js';
 
-const TINTED = new Set(['amber', 'emerald', 'rose']);
+const REFRESH_MS = 15000;
 
-function attendanceTone(value) {
-  return value >= 75 ? 'emerald' : 'rose';
+const money = (value) => `$${Number(value ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+
+/** Seconds into the shortest honest unit. Null means nothing has been answered yet. */
+function duration(seconds) {
+  if (seconds === null || seconds === undefined) return 'no data yet';
+  if (seconds < 90) return `${Math.round(seconds)}s`;
+  if (seconds < 5400) return `${Math.round(seconds / 60)}m`;
+
+  return `${(seconds / 3600).toFixed(1)}h`;
 }
 
-function feeTone(status) {
-  return status === 'Cleared' ? 'emerald' : 'amber';
-}
+export default function Dashboard() {
+  const { token } = useAuth();
+  const { showToast } = useToast();
 
-function Tile({ icon: Icon, label, value, tone = 'blue' }) {
-  return (
-    <div className={`tile${TINTED.has(tone) ? ` tint-${tone}` : ''}`}>
-      <span className={`tile__icon tile__icon--${tone}`} aria-hidden="true">
-        <Icon size={17} />
-      </span>
-      <span className="tile__label">{label}</span>
-      <span className="tile__value">{value}</span>
-    </div>
+  const [data, setData] = useState(null);
+
+  const apply = useCallback((payload) => setData(payload), []);
+  const fetchAll = useCallback(() => dashboardApi.get(token), [token]);
+
+  const refresh = useCallback(
+    () =>
+      fetchAll()
+        .then(apply)
+        .catch((error) =>
+          showToast({ tone: 'error', title: 'Could not load the dashboard', message: error.message }),
+        ),
+    [fetchAll, apply, showToast],
   );
-}
 
-function SectionTitle({ icon: Icon, children }) {
-  return (
-    <h2 className="dash-section__title">
-      <Icon size={17} aria-hidden="true" />
-      {children}
-    </h2>
-  );
-}
+  useEffect(() => {
+    let active = true;
 
-function Announcements({ announcements }) {
-  if (!announcements?.length) return null;
+    fetchAll()
+      .then((payload) => {
+        if (active) apply(payload);
+      })
+      .catch((error) => {
+        if (active) showToast({ tone: 'error', title: 'Could not load the dashboard', message: error.message });
+      });
 
-  return (
-    <section className="dash-section">
-      <SectionTitle icon={Bell}>Announcements</SectionTitle>
-      <ul className="notice-list">
-        {announcements.map((item) => (
-          <li key={item.id}>
-            <div className="notice__meta">
-              <span className="badge">{item.category}</span>
-              <time dateTime={item.date}>{formatDate(item.date)}</time>
-            </div>
-            <strong>{item.title}</strong>
-            <p>{item.body}</p>
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
-}
+    const timer = setInterval(refresh, REFRESH_MS);
 
-function StudentView({ enrolment, summary, courses, fees }) {
-  if (!enrolment) {
-    return (
-      <p className="alert alert--info">
-        <IdCard size={15} aria-hidden="true" />
-        No enrolment record is linked to this account yet. Once admissions confirms your
-        registration number, your timetable, attendance and results will appear here.
-      </p>
-    );
-  }
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, [fetchAll, apply, refresh, showToast]);
+
+  if (!data) return <p className="hint">Loading the dashboard…</p>;
+
+  const { leads, pipeline, revenue, subscription, team } = data;
 
   return (
     <>
-      <div className="dash-grid">
-        <Tile icon={TrendingUp} label="Semester GPA" value={summary.gpa.toFixed(2)} />
-        <Tile icon={GraduationCap} label="CGPA" value={summary.cgpa.toFixed(2)} />
-        <Tile
-          icon={CalendarCheck}
-          label="Attendance"
-          value={percent(summary.attendance)}
-          tone={attendanceTone(summary.attendance)}
-        />
-        <Tile icon={BookOpen} label="Credits earned" value={summary.creditsEarned} />
-        <Tile
-          icon={CreditCard}
-          label="Fee status"
-          value={summary.feeStatus}
-          tone={feeTone(summary.feeStatus)}
-        />
-      </div>
-
-      <section className="dash-section">
-        <SectionTitle icon={IdCard}>Enrolment</SectionTitle>
-        <ul className="info-list info-list--grid">
-          <li>
-            <strong>Registration no.</strong>
-            <span>{enrolment.registrationNo}</span>
-          </li>
-          <li>
-            <strong>Programme</strong>
-            <span>{enrolment.programme}</span>
-          </li>
-          <li>
-            <strong>Department</strong>
-            <span>{enrolment.department}</span>
-          </li>
-          <li>
-            <strong>Semester</strong>
-            <span>
-              {enrolment.semester} · Section {enrolment.section}
-            </span>
-          </li>
-          <li>
-            <strong>Advisor</strong>
-            <span>{enrolment.advisor}</span>
-          </li>
-          <li>
-            <strong>Status</strong>
-            <span>
-              <span className="pill pill--done">{enrolment.status}</span>
-            </span>
-          </li>
-        </ul>
-      </section>
-
-      <section className="dash-section">
-        <SectionTitle icon={BookOpen}>Current courses</SectionTitle>
-        <div className="table-wrap">
-          <table className="table">
-            <caption>
-              Fall 2026 · {summary.creditsRegistered} credit hours registered
-            </caption>
-            <thead>
-              <tr>
-                <th scope="col">Code</th>
-                <th scope="col">Course</th>
-                <th scope="col">Cr.</th>
-                <th scope="col">Instructor</th>
-                <th scope="col">Attendance</th>
-                <th scope="col">Marks</th>
-                <th scope="col">Grade</th>
-              </tr>
-            </thead>
-            <tbody>
-              {courses.map((course) => (
-                <tr key={course.code}>
-                  <th scope="row">{course.code}</th>
-                  <td>{course.title}</td>
-                  <td>{course.credits}</td>
-                  <td>{course.instructor}</td>
-                  <td>
-                    <span className={`pill pill--${attendanceTone(course.attendance) === 'emerald' ? 'done' : 'problem'}`}>
-                      {percent(course.attendance)}
-                    </span>
-                  </td>
-                  <td>{course.marks}</td>
-                  <td>
-                    <span className="pill pill--neutral">{course.grade}</span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section className="dash-section">
-        <SectionTitle icon={CreditCard}>Fee history</SectionTitle>
-        <div className="table-wrap">
-          <table className="table">
-            <thead>
-              <tr>
-                <th scope="col">Semester</th>
-                <th scope="col">Amount</th>
-                <th scope="col">Due date</th>
-                <th scope="col">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {fees.map((fee) => (
-                <tr key={fee.semester}>
-                  <th scope="row">{fee.semester}</th>
-                  <td>{formatCurrency(fee.amount)}</td>
-                  <td>{formatDate(fee.dueDate)}</td>
-                  <td>
-                    <span
-                      className={`pill ${fee.status === 'Paid' ? 'pill--done' : 'pill--pending'}`}
-                    >
-                      {fee.status}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        {summary.feeDue > 0 ? (
-          <p className="alert alert--pending" style={{ marginTop: '1rem' }}>
-            <CreditCard size={15} aria-hidden="true" />
-            {formatCurrency(summary.feeDue)} outstanding for the current semester, due{' '}
-            {formatDate(summary.feeDueDate)}.
+      <div className="dash-head">
+        <div>
+          <h1>{data.workspace.name}</h1>
+          <p>
+            Updated {new Date(data.generatedAt).toLocaleTimeString()} · {subscription.planName} (
+            {subscription.status})
           </p>
-        ) : null}
+        </div>
+        <Link className="btn btn-secondary btn-sm" to="/subscription">
+          <Wallet size={14} aria-hidden="true" />
+          Subscription
+        </Link>
+      </div>
+
+      <section className="metric-grid" style={{ marginBottom: '1.25rem' }}>
+        <Link className="metric-tile" to="/crm">
+          <span className="label-micro">New leads today</span>
+          <strong>{leads.newToday}</strong>
+          <span className="hint">{leads.weekLeads} this week</span>
+        </Link>
+
+        <Link className="metric-tile" to="/crm">
+          <span className="label-micro">Open pipeline value</span>
+          <strong>{money(pipeline.openValue)}</strong>
+          <span className="hint">{money(pipeline.wonValue)} won to date</span>
+        </Link>
+
+        <article className="metric-tile">
+          <span className="label-micro">Avg time to first response</span>
+          <strong>{duration(leads.avgFirstResponseSeconds)}</strong>
+          <span className="hint">
+            {leads.acknowledgedCount} acknowledged lead(s) measured
+          </span>
+        </article>
+
+        <Link className={`metric-tile${leads.recoveryCount > 0 ? ' is-warn' : ''}`} to="/recovery">
+          <span className="label-micro">Recovery queue</span>
+          <strong>{leads.recoveryCount}</strong>
+          <span className="hint">{leads.overdue} past the acknowledgement deadline</span>
+        </Link>
+
+        <article className={`metric-tile${leads.escalations24h > 0 ? ' is-warn' : ''}`}>
+          <span className="label-micro">Escalations in 24h</span>
+          <strong>{leads.escalations24h}</strong>
+          <span className="hint">{leads.unacknowledged} awaiting acknowledgement</span>
+        </article>
+
+        <Link className="metric-tile" to="/subscription">
+          <span className="label-micro">Payments received this month</span>
+          <strong>{money(revenue.collectedThisMonth)}</strong>
+          <span className="hint">collected only, not projected</span>
+        </Link>
+
+        <article className="metric-tile">
+          <span className="label-micro">Projected revenue</span>
+          <strong>{money(revenue.projected)}</strong>
+          <span className="hint">
+            open opportunities plus {revenue.awaitingPaymentRequests} unpaid request(s)
+          </span>
+        </article>
+
+        <article className="metric-tile">
+          <span className="label-micro">Conversion</span>
+          <strong>{leads.conversionRate}%</strong>
+          <span className="hint">{pipeline.monthWon} won this month</span>
+        </article>
       </section>
-    </>
-  );
-}
 
-function ParentView({ wards }) {
-  if (!wards.length) {
-    return (
-      <p className="alert alert--info">
-        <Users size={15} aria-hidden="true" />
-        No wards are linked to this account yet. Contact the registrar to link your child’s record.
-      </p>
-    );
-  }
+      <section className="grid grid-2" style={{ marginBottom: '1.25rem' }}>
+        <article className="card">
+          <span className="label-micro">
+            <TrendingUp size={12} aria-hidden="true" /> Pipeline by stage
+          </span>
 
-  return wards.map((ward) => (
-    <section className="dash-section" key={ward.email}>
-      <SectionTitle icon={Users}>{ward.name}</SectionTitle>
-      <div className="dash-grid">
-        <Tile icon={IdCard} label="Registration no." value={ward.enrolment.registrationNo} />
-        <Tile icon={BookOpen} label="Programme" value={ward.enrolment.programme} />
-        <Tile icon={TrendingUp} label="CGPA" value={ward.summary.cgpa.toFixed(2)} />
-        <Tile
-          icon={CalendarCheck}
-          label="Attendance"
-          value={percent(ward.summary.attendance)}
-          tone={attendanceTone(ward.summary.attendance)}
-        />
-        <Tile
-          icon={CreditCard}
-          label="Fee status"
-          value={ward.summary.feeStatus}
-          tone={feeTone(ward.summary.feeStatus)}
-        />
-      </div>
-
-      {ward.summary.feeDue > 0 ? (
-        <p className="alert alert--pending" style={{ marginTop: '1rem' }}>
-          <CreditCard size={15} aria-hidden="true" />
-          {formatCurrency(ward.summary.feeDue)} outstanding, due{' '}
-          {formatDate(ward.summary.feeDueDate)}.
-        </p>
-      ) : (
-        <p className="alert alert--success" style={{ marginTop: '1rem' }}>
-          <CalendarCheck size={15} aria-hidden="true" />
-          All dues cleared for {ward.enrolment.semester}.
-        </p>
-      )}
-    </section>
-  ));
-}
-
-function FacultyView({ teaching }) {
-  return (
-    <>
-      <div className="dash-grid">
-        <Tile icon={UserCog} label="Designation" value={teaching.designation} />
-        <Tile icon={Building} label="Department" value={teaching.department} />
-        <Tile icon={Users} label="Advisees" value={teaching.advisees} />
-        <Tile
-          icon={ClipboardList}
-          label="Awaiting grading"
-          value={teaching.pendingGrading}
-          tone={teaching.pendingGrading > 0 ? 'amber' : 'emerald'}
-        />
-      </div>
-
-      <section className="dash-section">
-        <SectionTitle icon={BookOpen}>Courses taught</SectionTitle>
-        {teaching.coursesTaught.length > 0 ? (
-          <div className="table-wrap">
+          <div className="table-wrap" style={{ marginTop: '0.5rem' }}>
             <table className="table">
-              <caption>Fall 2026 teaching load · Office {teaching.office}</caption>
               <thead>
                 <tr>
-                  <th scope="col">Code</th>
-                  <th scope="col">Course</th>
-                  <th scope="col">Semester</th>
-                  <th scope="col">Enrolled</th>
-                  <th scope="col">Attendance</th>
+                  <th scope="col">Stage</th>
+                  <th scope="col">Leads</th>
                 </tr>
               </thead>
               <tbody>
-                {teaching.coursesTaught.map((course) => (
-                  <tr key={course.code}>
-                    <th scope="row">{course.code}</th>
-                    <td>{course.title}</td>
-                    <td>{course.semester}</td>
-                    <td>{course.enrolled}</td>
+                {Object.entries(pipeline.stageLabels).map(([key, label]) => (
+                  <tr key={key}>
+                    <th scope="row">
+                      <Link to="/crm">{label}</Link>
+                    </th>
+                    <td>{pipeline.byStage[key] ?? 0}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </article>
+
+        <article className="card">
+          <span className="label-micro">
+            <Users size={12} aria-hidden="true" /> Team availability
+          </span>
+
+          <div className="table-wrap" style={{ marginTop: '0.5rem' }}>
+            <table className="table">
+              <thead>
+                <tr>
+                  <th scope="col">Member</th>
+                  <th scope="col">Status</th>
+                  <th scope="col">Open leads</th>
+                </tr>
+              </thead>
+              <tbody>
+                {team.map((member) => (
+                  <tr key={member.id}>
+                    <th scope="row">
+                      {member.name}
+                      <br />
+                      <span className="hint">{member.levelLabel}</span>
+                    </th>
                     <td>
-                      <span
-                        className={`pill ${course.attendanceMarked ? 'pill--done' : 'pill--pending'}`}
-                      >
-                        {course.attendanceMarked ? 'Marked' : 'Pending'}
+                      <span className={`pill ${member.available ? 'pill--done' : 'pill--neutral'}`}>
+                        {member.available ? 'Available' : 'Unavailable'}
                       </span>
+                    </td>
+                    <td>
+                      {member.openLeads}
+                      {member.openLeadLimit ? ` / ${member.openLeadLimit}` : ''}
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-        ) : (
-          <p className="alert alert--info">
-            <ClipboardList size={15} aria-hidden="true" />
-            No teaching load has been assigned yet.
+
+          <p className="hint" style={{ marginBottom: 0 }}>
+            <Zap size={12} aria-hidden="true" /> Round-robin only considers available members under their
+            limit. Change this in Workspace settings.
           </p>
-        )}
+        </article>
       </section>
-    </>
-  );
-}
 
-export default function Dashboard() {
-  const { user, token } = useAuth();
-  const loadOverview = useCallback(() => api.overview(token), [token]);
-  const { data, error, loading, reload } = useApiResource(loadOverview);
+      <section className="grid grid-2">
+        <article className="card">
+          <span className="label-micro">
+            <Activity size={12} aria-hidden="true" /> Latest leads
+          </span>
 
-  if (user.role === ADMIN_ROLE) {
-    return <Navigate to="/admin" replace />;
-  }
+          <ul className="voice-log">
+            {data.recentLeads.map((lead) => (
+              <li className="voice-turn" key={lead.id}>
+                <Link to={`/crm/${lead.id}`}>
+                  <strong>{lead.name}</strong>
+                </Link>
+                <span className="hint">
+                  {' '}
+                  · {lead.stage} · {lead.assigneeName ?? 'Unassigned'}
+                </span>
+                {lead.overdueSeconds > 0 ? (
+                  <p className="hint" style={{ margin: 0 }}>
+                    <TriangleAlert size={12} aria-hidden="true" /> {lead.overdueSeconds}s past the deadline
+                  </p>
+                ) : null}
+              </li>
+            ))}
+            {data.recentLeads.length === 0 ? <p className="hint">No leads yet.</p> : null}
+          </ul>
+        </article>
 
-  return (
-    <>
-      <div className="dash-head">
-        <div>
-          <h1>Welcome, {user.name.split(' ')[0]}</h1>
-          <p>Here is your record for the current semester.</p>
-        </div>
-        <button type="button" className="btn btn-secondary btn-sm" onClick={reload}>
-          <RefreshCw size={14} aria-hidden="true" />
-          Refresh
-        </button>
-      </div>
+        <article className="card">
+          <span className="label-micro">
+            <Clock size={12} aria-hidden="true" /> Recent activity
+          </span>
 
-      <AsyncSection
-        loading={loading}
-        error={error}
-        onRetry={reload}
-        shape="tiles"
-        count={5}
-        label="Loading your dashboard"
-        errorTitle="We could not load your dashboard"
-      >
-        {data ? (
-          <>
-            {data.kind === 'student' ? (
-              <StudentView
-                enrolment={data.enrolment}
-                summary={data.summary}
-                courses={data.courses}
-                fees={data.fees}
-              />
-            ) : null}
+          <ul className="voice-log">
+            {data.recentActivities.map((entry) => (
+              <li className="voice-turn" key={entry.id}>
+                <span className="label-micro">
+                  {entry.kind} · {entry.by} · {new Date(entry.at).toLocaleString()}
+                </span>
+                <p>{entry.summary}</p>
+              </li>
+            ))}
+            {data.recentActivities.length === 0 ? <p className="hint">Nothing recorded yet.</p> : null}
+          </ul>
+        </article>
+      </section>
 
-            {data.kind === 'parent' ? <ParentView wards={data.wards} /> : null}
-
-            {data.kind === 'faculty' ? <FacultyView teaching={data.teaching} /> : null}
-
-            <Announcements announcements={data.announcements} />
-          </>
-        ) : null}
-      </AsyncSection>
-
-      <div className="dash-section">
-        <AssistantCard />
-      </div>
+      <p className="hint" style={{ marginTop: '1rem' }}>
+        <ShieldAlert size={12} aria-hidden="true" /> Every figure comes from the same read, so the tiles
+        agree with each other. Click a tile to open the records behind it.{' '}
+        <Link to="/crm">
+          Open the pipeline <ArrowRight size={12} aria-hidden="true" />
+        </Link>
+      </p>
     </>
   );
 }

@@ -13,6 +13,7 @@ import {
   FileText,
   GraduationCap,
   HardDrive,
+  Kanban,
   MessageCircle,
   RefreshCw,
   ShieldCheck,
@@ -547,9 +548,9 @@ export default function Admin() {
                   <Bitcoin size={12} aria-hidden="true" />
                   Binance {data.integrations.binance ? 'connected' : 'off'}
                 </span>
-                <Link className="btn btn-secondary btn-sm" to="/documents">
-                  <FileText size={14} aria-hidden="true" />
-                  Manage documents
+                <Link className="btn btn-secondary btn-sm" to="/crm">
+                  <Kanban size={14} aria-hidden="true" />
+                  Open the pipeline
                 </Link>
                 <Link className="btn btn-secondary btn-sm" to="/payments">
                   <Wallet size={14} aria-hidden="true" />

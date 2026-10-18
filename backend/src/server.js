@@ -1,6 +1,7 @@
 import { createApp } from './app.js';
 import { config } from './config.js';
 import { startEscalationTicker } from './lib/escalation.js';
+import { migrateStageKeys } from './lib/leads.js';
 import { seedCampusKnowledge } from './lib/knowledge.js';
 import { startPaymentWatcher } from './lib/paymentWatcher.js';
 import { seedDemoAccounts } from './lib/seed.js';
@@ -35,6 +36,15 @@ try {
   }
 } catch (error) {
   console.error(`Workspace seeding failed: ${error.message}`);
+}
+
+// Rewrite stage keys from before the pipeline was renamed, so nothing goes missing.
+try {
+  const migrated = await migrateStageKeys();
+
+  if (migrated > 0) console.log(`Migrated ${migrated} lead(s) onto the current pipeline stages.`);
+} catch (error) {
+  console.error(`Stage migration failed: ${error.message}`);
 }
 
 // Index the published campus knowledge so the RAG pipeline can retrieve it.

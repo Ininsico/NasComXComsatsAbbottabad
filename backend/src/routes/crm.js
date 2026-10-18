@@ -80,6 +80,12 @@ router.get('/stats', requirePermission('crm.view'), async (req, res) => {
   res.json(await leadStats(req.workspace.id));
 });
 
+/** Every open lead that needs a human, with the reason stated per item. */
+router.get('/recovery', requirePermission('crm.view'), async (req, res) => {
+  const { recoveryQueue } = await import('../lib/leads.js');
+  res.json(await recoveryQueue(req.workspace.id));
+});
+
 router.get('/leads', requirePermission('crm.view'), async (req, res) => {
   const { listLeads } = await import('../lib/leads.js');
 

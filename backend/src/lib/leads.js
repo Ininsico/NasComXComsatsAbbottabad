@@ -8,14 +8,14 @@ import { getSettings } from './settings.js';
 const leads = db.collection('leads');
 const activities = db.collection('activities');
 
-export const STAGES = ['new', 'contacted', 'qualified', 'applied', 'enrolled', 'lost'];
+export const STAGES = ['new', 'contacted', 'qualified', 'proposal', 'won', 'lost'];
 
 export const STAGE_LABELS = {
   new: 'New',
   contacted: 'Contacted',
   qualified: 'Qualified',
-  applied: 'Applied',
-  enrolled: 'Won',
+  proposal: 'Proposal',
+  won: 'Won',
   lost: 'Lost',
 };
 
@@ -23,7 +23,7 @@ export const SOURCES = ['website', 'whatsapp', 'sms', 'walk-in', 'phone', 'refer
 
 export const ACTIVITY_KINDS = ['call', 'email', 'meeting', 'note', 'whatsapp', 'sms', 'system'];
 
-const CLOSED = new Set(['enrolled', 'lost']);
+const CLOSED = new Set(['won', 'lost']);
 
 const text = (value, limit = 200) => String(value ?? '').trim().slice(0, limit);
 const nowIso = () => new Date().toISOString();
@@ -195,7 +195,10 @@ export async function createLead({ workspaceId, input, actorId = null, actorName
     ackDeadline: assignee
       ? new Date(Date.now() + settings.acknowledgeSeconds * 1000).toISOString()
       : null,
+    // When the clock started for this owner. "Time to first response" is measured from here.
+    assignedAt: assignee ? nowIso() : null,
     escalationLevel: 0,
+    escalatedAt: null,
     escalatedTo: null,
     createdAt: nowIso(),
     updatedAt: nowIso(),
@@ -319,13 +322,15 @@ export async function escalateDue({ now = Date.now(), workspaceId = null } = {})
           if (!row) return;
 
           row.escalationLevel = index + 1;
+          row.escalatedAt = nowIso();
           row.escalatedTo = target?.id ?? null;
-          row.updatedAt = nowIso();
+          row.updatedAt = row.escalatedAt;
 
           if (target) {
             // The new owner gets their own clock, otherwise the next step would fire
             // immediately on the same overdue lead.
             row.assigneeId = target.id;
+            row.assignedAt = row.escalatedAt;
             row.ackDeadline = new Date(
               now + settings.acknowledgeSeconds * 1000,
             ).toISOString();
@@ -463,9 +468,11 @@ export async function assignLead({ workspaceId, id, memberId, actorId = null, ac
     row.assigneeId = memberId;
     row.acknowledgedAt = null;
     row.escalationLevel = 0;
+    row.escalatedAt = null;
     row.escalatedTo = null;
     row.ackDeadline = new Date(Date.now() + settings.acknowledgeSeconds * 1000).toISOString();
-    row.updatedAt = nowIso();
+    row.assignedAt = nowIso();
+    row.updatedAt = row.assignedAt;
     updated = row;
   });
 
@@ -500,6 +507,29 @@ export async function deleteLead({ workspaceId, id, actorId = null }) {
   return { lead: removed };
 }
 
+/**
+ * The pipeline stages were renamed when the education vocabulary was dropped (applied ->
+ * proposal, enrolled -> won). Stored leads still carry the old keys, which would make them
+ * invisible on a board built from the new ones, so this rewrites them once at boot.
+ */
+export async function migrateStageKeys() {
+  const RENAMES = { applied: 'proposal', enrolled: 'won' };
+  let changed = 0;
+
+  await leads.mutate((rows) => {
+    for (const row of rows) {
+      const next = RENAMES[row.stage];
+
+      if (next) {
+        row.stage = next;
+        changed += 1;
+      }
+    }
+  });
+
+  return changed;
+}
+
 export async function listActivities(workspaceId, { leadId, limit = 50 } = {}) {
   const rows = await activities.where(
     (activity) => activity.workspaceId === workspaceId && (!leadId || activity.leadId === leadId),
@@ -529,21 +559,41 @@ export async function leadStats(workspaceId) {
   const byStage = Object.fromEntries(STAGES.map((stage) => [stage, 0]));
   const byAssignee = Object.fromEntries(members.map((member) => [member.id, 0]));
   let pipelineValue = 0;
-  let enrolledValue = 0;
+  let wonValue = 0;
   let weekLeads = 0;
-  let monthEnrolled = 0;
+  let monthWon = 0;
   let unacknowledged = 0;
   let overdue = 0;
+  let firstResponseTotal = 0;
+  let firstResponseCount = 0;
+  let escalations24h = 0;
+  let newToday = 0;
+  const dayStart = new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
+  const dayAgo = new Date(now - 24 * 3600 * 1000).toISOString();
 
   for (const lead of rows) {
     if (byStage[lead.stage] !== undefined) byStage[lead.stage] += 1;
+
+    if (lead.acknowledgedAt) {
+      const from = Date.parse(lead.assignedAt ?? lead.createdAt);
+      const seconds = (Date.parse(lead.acknowledgedAt) - from) / 1000;
+
+      if (Number.isFinite(seconds) && seconds >= 0) {
+        firstResponseTotal += seconds;
+        firstResponseCount += 1;
+      }
+    }
+
+    if (lead.escalatedAt && lead.escalatedAt >= dayAgo) escalations24h += 1;
+    if (lead.createdAt >= dayStart) newToday += 1;
+
     if (lead.assigneeId && byAssignee[lead.assigneeId] !== undefined) byAssignee[lead.assigneeId] += 1;
 
-    if (lead.stage !== 'lost' && lead.stage !== 'enrolled') pipelineValue += Number(lead.value ?? 0);
+    if (lead.stage !== 'lost' && lead.stage !== 'won') pipelineValue += Number(lead.value ?? 0);
 
-    if (lead.stage === 'enrolled') {
-      enrolledValue += Number(lead.value ?? 0);
-      if (lead.updatedAt >= monthStart) monthEnrolled += 1;
+    if (lead.stage === 'won') {
+      wonValue += Number(lead.value ?? 0);
+      if (lead.updatedAt >= monthStart) monthWon += 1;
     }
 
     if (lead.createdAt >= weekAgo) weekLeads += 1;
@@ -555,7 +605,7 @@ export async function leadStats(workspaceId) {
   }
 
   const total = rows.length;
-  const enrolled = byStage.enrolled;
+  const won = byStage.won;
 
   return {
     generatedAt: nowIso(),
@@ -564,12 +614,32 @@ export async function leadStats(workspaceId) {
     byAssignee,
     stageLabels: STAGE_LABELS,
     pipelineValue: Math.round(pipelineValue * 100) / 100,
-    enrolledValue: Math.round(enrolledValue * 100) / 100,
+    wonValue: Math.round(wonValue * 100) / 100,
     weekLeads,
-    monthEnrolled,
-    conversionRate: total ? Math.round((enrolled / total) * 1000) / 10 : 0,
+    monthWon,
+    conversionRate: total ? Math.round((won / total) * 1000) / 10 : 0,
     unacknowledged,
     overdue,
+    newToday,
+    escalations24h,
+    // Null rather than zero when nothing has been answered yet — an average of nothing
+    // is not "0 seconds", and the dashboard shows it as "no data" instead of a lie.
+    avgFirstResponseSeconds: firstResponseCount
+      ? Math.round(firstResponseTotal / firstResponseCount)
+      : null,
+    acknowledgedCount: firstResponseCount,
+    recoveryCount: (await recoveryQueue(workspaceId)).count,
+    availability: members.map((member) => ({
+      id: member.id,
+      name: member.name,
+      level: member.level,
+      levelLabel: member.levelLabel,
+      available: Boolean(member.available),
+      backup: Boolean(member.backup),
+      openLeads: byAssignee[member.id] ?? 0,
+      openLeadLimit: member.openLeadLimit ?? null,
+      lastAssignedAt: member.lastAssignedAt ?? null,
+    })),
     activities: (await activities.where((activity) => activity.workspaceId === workspaceId)).length,
     recentLeads: [...rows]
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
@@ -580,5 +650,74 @@ export async function leadStats(workspaceId) {
         overdueSeconds: secondsOverdue(lead),
       })),
     recentActivities: await listActivities(workspaceId, { limit: 8 }),
+  };
+}
+
+/**
+ * The recovery queue: every open lead that needs a human now, each with the reason it is
+ * here. Three ways in, all configurable — still unacknowledged past its window, escalated
+ * twice or more, or untouched for longer than the workspace's idle period.
+ */
+export async function recoveryQueue(workspaceId) {
+  const rows = await leads.where((lead) => lead.workspaceId === workspaceId);
+  const members = await listMembers(workspaceId);
+  const settings = await getSettings(workspaceId);
+  const now = Date.now();
+  const idleMs = Math.max(1, Number(settings.idleHours ?? 24)) * 3600 * 1000;
+
+  const items = [];
+
+  for (const lead of rows) {
+    if (!isOpen(lead)) continue;
+
+    const reasons = [];
+    const overdue = secondsOverdue(lead);
+
+    if (!lead.acknowledgedAt && lead.ackDeadline && overdue > 0) {
+      reasons.push({
+        code: 'unacknowledged',
+        label: `Unacknowledged — ${overdue}s past the deadline`,
+      });
+    }
+
+    if ((lead.escalationLevel ?? 0) >= 2) {
+      reasons.push({
+        code: 'escalated',
+        label: `Escalated ${lead.escalationLevel} times`,
+      });
+    }
+
+    const idleFor = now - Date.parse(lead.updatedAt ?? lead.createdAt);
+
+    if (idleFor > idleMs) {
+      reasons.push({
+        code: 'idle',
+        label: `No activity for ${Math.round(idleFor / 3600000)}h (idle limit ${settings.idleHours}h)`,
+      });
+    }
+
+    if (reasons.length === 0) continue;
+
+    items.push({
+      ...lead,
+      assigneeName: members.find((member) => member.id === lead.assigneeId)?.name ?? null,
+      overdueSeconds: overdue,
+      idleHours: Math.round(idleFor / 3600000),
+      reasons,
+    });
+  }
+
+  // Worst first: deepest past the deadline, then the most-escalated.
+  items.sort(
+    (a, b) =>
+      b.overdueSeconds - a.overdueSeconds || (b.escalationLevel ?? 0) - (a.escalationLevel ?? 0),
+  );
+
+  return {
+    generatedAt: nowIso(),
+    idleHours: settings.idleHours,
+    acknowledgeSeconds: settings.acknowledgeSeconds,
+    count: items.length,
+    items,
   };
 }

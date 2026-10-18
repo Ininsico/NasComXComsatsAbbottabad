@@ -86,9 +86,6 @@ export const api = {
   ask: (token, question) =>
     request('/api/assistant/ask', { method: 'POST', body: { question }, token }),
 
-  documents: (token) => request('/api/documents', { token }),
-  removeDocument: (token, id) => request(`/api/documents/${id}`, { method: 'DELETE', token }),
-
   paymentConfig: (token) => request('/api/payments/config', { token }),
   paymentPlans: (token) => request('/api/payments/plans', { token }),
   paymentProviders: (token) => request('/api/payments/providers', { token }),
@@ -98,14 +95,6 @@ export const api = {
   checkPaymentIntent: (token, id) =>
     request(`/api/payments/intents/${id}/check`, { method: 'POST', token }),
   wallet: (token) => request('/api/payments/wallet', { token }),
-
-  uploadDocument: async (token, { file, title }) => {
-    const form = new FormData();
-    form.append('title', title ?? '');
-    form.append('file', file);
-
-    return requestForm('/api/documents', token, form);
-  },
 
   profile: (token) => request('/api/profile', { token }),
   saveProfile: (token, details) => request('/api/profile', { method: 'PUT', body: details, token }),
@@ -129,8 +118,31 @@ export const api = {
   whatsappStatus: (token) => request('/api/whatsapp/status', { token }),
   whatsappStart: (token) => request('/api/whatsapp/start', { method: 'POST', token }),
   whatsappStop: (token) => request('/api/whatsapp/stop', { method: 'POST', token }),
+  whatsappLogout: (token) => request('/api/whatsapp/logout', { method: 'POST', token }),
+  whatsappMain: (token) => request('/api/whatsapp/main', { token }),
   whatsappSend: (token, to, text) =>
     request('/api/whatsapp/send', { method: 'POST', body: { to, text }, token }),
+};
+
+/** Every connector a workspace can attach, in one read. */
+export const integrationsApi = {
+  all: (token) => request('/api/integrations', { token }),
+};
+
+/** The operational dashboard, read at one moment so the figures agree. */
+export const dashboardApi = {
+  get: (token) => request('/api/dashboard', { token }),
+};
+
+/** Plan, status, limits, invoices and checkout for the workspace subscription. */
+export const subscriptionApi = {
+  get: (token) => request('/api/subscription', { token }),
+  checkout: (token, planId, provider) =>
+    request('/api/subscription/checkout', { method: 'POST', body: { planId, provider }, token }),
+  confirm: (token, intentId) =>
+    request('/api/subscription/confirm', { method: 'POST', body: { intentId }, token }),
+  cancel: (token) => request('/api/subscription/cancel', { method: 'POST', token }),
+  resume: (token) => request('/api/subscription/resume', { method: 'POST', token }),
 };
 
 function query(params = {}) {
@@ -150,6 +162,7 @@ export const crmApi = {
   meta: (token) => request('/api/crm/meta', { token }),
   stats: (token) => request('/api/crm/stats', { token }),
   leads: (token, params) => request(`/api/crm/leads${query(params)}`, { token }),
+  recovery: (token) => request('/api/crm/recovery', { token }),
   lead: (token, id) => request(`/api/crm/leads/${encodeURIComponent(id)}`, { token }),
   createLead: (token, body) => request('/api/crm/leads', { method: 'POST', body, token }),
   updateLead: (token, id, body) =>

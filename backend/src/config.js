@@ -73,6 +73,10 @@ export const config = {
     webhookSecret: process.env.STRIPE_WEBHOOK_SECRET ?? '',
     currency: (process.env.STRIPE_CURRENCY ?? 'usd').toLowerCase(),
   },
+  google: {
+    clientId: process.env.GOOGLE_CLIENT_ID ?? '',
+    clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? '',
+  },
   rag: {
     topK: toInt(process.env.RAG_TOP_K, 4),
     minScore: toFloat(process.env.RAG_MIN_SCORE, 0.05),
