@@ -170,7 +170,7 @@ export const crmApi = {
   addActivity: (token, body) =>
     request('/api/crm/activities', { method: 'POST', body, token }),
   alerts: (token) => request('/api/crm/alerts', { token }),
-  audit: (token) => request('/api/crm/audit', { token }),
+  audit: (token, params) => request(`/api/crm/audit${query(params)}`, { token }),
   lists: (token) => request('/api/crm/lists', { token }),
   createList: (token, body) => request('/api/crm/lists', { method: 'POST', body, token }),
   updateList: (token, id, body) =>
@@ -242,6 +242,9 @@ export const calendarApi = {
   authorize: (token) => request('/api/calendar/authorize', { token }),
   busy: (token, start, end) => request(`/api/calendar/busy${query({ start, end })}`, { token }),
   book: (token, body) => request('/api/calendar/book', { method: 'POST', body, token }),
+  appointments: (token) => request('/api/calendar/appointments', { token }),
+  cancelAppointment: (token, id) =>
+    request(`/api/calendar/appointments/${encodeURIComponent(id)}`, { method: 'DELETE', token }),
   disconnect: (token) => request('/api/calendar/connection', { method: 'DELETE', token }),
 };
 

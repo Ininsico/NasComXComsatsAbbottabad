@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { listAppointments, upcoming } from '../lib/appointments.js';
 import { requireAuth } from '../lib/auth.js';
 import { workspaceContext } from '../lib/context.js';
 import { leadStats } from '../lib/leads.js';
@@ -21,11 +22,16 @@ router.use(requireAuth, workspaceContext);
  */
 router.get('/', async (req, res) => {
   const workspaceId = req.workspace.id;
+  // The spec's split: a User sees their own book, an Owner or Admin sees the company. That
+  // is a server decision — the page cannot widen its own scope.
+  const personal = req.member.level === 'user';
+  const scope = personal ? { assigneeId: req.member.id } : {};
 
-  const [stats, intents, entitlements] = await Promise.all([
-    leadStats(workspaceId),
+  const [stats, intents, entitlements, appointments] = await Promise.all([
+    leadStats(workspaceId, scope),
     listIntents(),
     entitlementsFor(workspaceId),
+    listAppointments(workspaceId),
   ]);
 
   const mine = intents.filter((intent) => intent.workspaceId === workspaceId);
@@ -49,6 +55,8 @@ router.get('/', async (req, res) => {
     workspace: { id: workspaceId, name: req.workspace.name },
     generatedAt: stats.generatedAt,
     valueHidden: !showValue,
+    personal,
+    scopeLabel: personal ? 'Your figures' : 'Company-wide',
     subscription: {
       planId: entitlements.subscription.planId,
       planName: entitlements.subscription.planName,
@@ -78,11 +86,16 @@ router.get('/', async (req, res) => {
       monthWon: stats.monthWon,
     },
     revenue: {
-      collectedThisMonth: showValue ? Math.round(collected * 100) / 100 : null,
-      projected: showValue ? Math.round(projected * 100) / 100 : null,
-      awaitingPaymentRequests: awaiting.length,
+      // Revenue is company money; a personal view does not get it.
+      collectedThisMonth: personal ? null : showValue ? Math.round(collected * 100) / 100 : null,
+      projected: personal ? null : showValue ? Math.round(projected * 100) / 100 : null,
+      awaitingPaymentRequests: personal ? 0 : awaiting.length,
     },
     team: stats.availability,
+    appointments: {
+      upcoming: upcoming(appointments),
+      total: appointments.length,
+    },
     recentLeads: maskValues(stats.recentLeads, req.permissions),
     recentActivities: stats.recentActivities,
   });

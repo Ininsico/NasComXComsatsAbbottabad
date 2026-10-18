@@ -1,11 +1,18 @@
 import { Router } from 'express';
 import { record as audit } from '../lib/audit.js';
+import {
+  findAppointment,
+  listAppointments,
+  markCancelled,
+  recordAppointment,
+} from '../lib/appointments.js';
 import { requireAuth } from '../lib/auth.js';
 import {
   authorizationUrl,
   bookAppointment,
   busyIntervals,
   connectionFor,
+  deleteEvent,
   disconnect,
   exchangeCode,
   googleConfigured,
@@ -163,6 +170,19 @@ router.post('/book', requirePermission('crm.edit'), async (req, res) => {
       by: req.user.name,
     });
 
+    const appointment = await recordAppointment({
+      workspaceId: req.workspace.id,
+      leadId: lead.id,
+      contactId: lead.contactId ?? null,
+      memberId: req.member.id,
+      memberName: req.user.name,
+      title: req.body?.summary || `Appointment: ${lead.name}`,
+      start: startIso,
+      end: endIso,
+      timeZone: req.body?.timeZone || settings.timezone,
+      googleEventId: result.event.id,
+    });
+
     await audit({
       workspaceId: req.workspace.id,
       actorId: req.user.id,
@@ -171,10 +191,62 @@ router.post('/book', requirePermission('crm.edit'), async (req, res) => {
       metadata: { eventId: result.event.id, start: startIso },
     });
 
-    return res.status(201).json({ event: { id: result.event.id, htmlLink: result.event.htmlLink } });
+    return res.status(201).json({
+      event: { id: result.event.id, htmlLink: result.event.htmlLink },
+      appointment,
+    });
   } catch (error) {
     return res.status(502).json({ error: error.message });
   }
+});
+
+/** Every booking this workspace has made, soonest first. */
+router.get('/appointments', requirePermission('crm.view'), async (req, res) => {
+  res.json({ appointments: await listAppointments(req.workspace.id) });
+});
+
+/**
+ * Cancel an appointment: the Google event goes first, then the local row. If Google refuses
+ * for a real reason the cancellation is not recorded, because a calendar that still holds
+ * the meeting should not be reported as cancelled.
+ */
+router.delete('/appointments/:id', requirePermission('crm.edit'), async (req, res) => {
+  const appointment = await findAppointment(req.params.id, req.workspace.id);
+
+  if (!appointment) return res.status(404).json({ error: 'No such appointment' });
+  if (appointment.status === 'cancelled') return res.status(409).json({ error: 'Already cancelled' });
+
+  if (appointment.googleEventId) {
+    try {
+      await deleteEvent(req.workspace.id, appointment.googleEventId);
+    } catch (error) {
+      return res.status(502).json({
+        error: `The calendar refused the cancellation: ${error.message}`,
+      });
+    }
+  }
+
+  const cancelled = await markCancelled({ workspaceId: req.workspace.id, id: appointment.id });
+
+  if (appointment.leadId) {
+    await addActivity({
+      workspaceId: req.workspace.id,
+      leadId: appointment.leadId,
+      kind: 'meeting',
+      summary: `Appointment cancelled (was ${new Date(appointment.start).toLocaleString()})`,
+      by: req.user.name,
+    });
+  }
+
+  await audit({
+    workspaceId: req.workspace.id,
+    actorId: req.user.id,
+    action: 'calendar.event_cancelled',
+    target: appointment.leadId ?? appointment.id,
+    metadata: { eventId: appointment.googleEventId, start: appointment.start },
+  });
+
+  return res.json({ appointment: cancelled });
 });
 
 export default router;

@@ -398,10 +398,23 @@ router.get('/alerts', requirePermission('integrations.manage'), async (req, res)
   res.json({ alerts: await listAlerts(req.workspace.id) });
 });
 
+/**
+ * The audit log, filterable by event type, actor and date, with the chain verified on each
+ * read. Read-only by design: there is no endpoint that can edit or delete an entry.
+ */
 router.get('/audit', requirePermission('audit.view'), async (req, res) => {
+  const entries = await listEntries(req.workspace.id, {
+    action: req.query.action || undefined,
+    actorId: req.query.actorId || undefined,
+    from: req.query.from || undefined,
+    to: req.query.to || undefined,
+    limit: req.query.limit,
+  });
+
   res.json({
-    entries: await listEntries(req.workspace.id),
+    entries,
     chain: await verifyChain(req.workspace.id),
+    actions: [...new Set((await listEntries(req.workspace.id, { limit: 1000 })).map((entry) => entry.action))].sort(),
   });
 });
 

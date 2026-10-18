@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { record as audit } from '../lib/audit.js';
 import { requireAuth } from '../lib/auth.js';
-import { optOutBlocked, findContact } from '../lib/contacts.js';
+import { optOutBlocked, findContact, listContacts } from '../lib/contacts.js';
 import { requirePermission, workspaceContext } from '../lib/context.js';
 import { addActivity, findLead } from '../lib/leads.js';
 import { listMessages, recordOutbound } from '../lib/conversations.js';
@@ -13,17 +13,30 @@ router.use(requireAuth, workspaceContext);
 
 /**
  * The conversation view: every recorded WhatsApp message for a contact or a lead, newest
- * first. Reading is a CRM permission; sending is an edit permission, because a message out
- * the door is a change the customer can see.
+ * first — and, with no filter, the workspace's whole inbox. Reading is a CRM permission;
+ * sending is an edit permission, because a message out the door is a change the customer
+ * can see.
  */
 router.get('/', requirePermission('crm.view'), async (req, res) => {
-  const messages = await listMessages(req.workspace.id, {
-    contactId: req.query.contactId ?? null,
-    leadId: req.query.leadId ?? null,
-    limit: req.query.limit,
-  });
+  const [messages, contacts] = await Promise.all([
+    listMessages(req.workspace.id, {
+      contactId: req.query.contactId ?? null,
+      leadId: req.query.leadId ?? null,
+      limit: req.query.limit,
+    }),
+    listContacts(req.workspace.id),
+  ]);
 
-  res.json({ messages });
+  const byId = new Map(contacts.map((contact) => [contact.id, contact]));
+
+  res.json({
+    messages: messages.map((message) => ({
+      ...message,
+      contactName: byId.get(message.contactId)?.name ?? null,
+      contactPhone: byId.get(message.contactId)?.phone ?? null,
+      optedOut: Boolean(byId.get(message.contactId)?.optOut?.whatsapp),
+    })),
+  });
 });
 
 /**

@@ -196,6 +196,21 @@ export async function busyIntervals(workspaceId, startIso, endIso, timeZone) {
   return payload?.calendars?.primary?.busy ?? [];
 }
 
+/** Cancel an event the connected calendar owns. 404/410 means it is already gone. */
+export async function deleteEvent(workspaceId, eventId) {
+  try {
+    await api(workspaceId, `/calendars/primary/events/${encodeURIComponent(eventId)}?sendUpdates=all`, {
+      method: 'DELETE',
+    });
+
+    return { deleted: true };
+  } catch (error) {
+    if (/404|410|not found|gone/i.test(error.message)) return { deleted: true, alreadyGone: true };
+
+    throw error;
+  }
+}
+
 /**
  * Book an appointment, refusing to double-book. Times are sent with an explicit
  * timezone so a server in UTC and a browser in Karachi agree on what "10:00" means.

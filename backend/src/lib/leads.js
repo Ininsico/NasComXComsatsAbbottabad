@@ -909,9 +909,11 @@ export function validateCustomFields(definitions, input = {}, existing = {}) {
   return { errors, values };
 }
 
-export async function leadStats(workspaceId) {
+export async function leadStats(workspaceId, { assigneeId = null } = {}) {
   const settings = await getSettings(workspaceId);
-  const rows = await leads.where((lead) => lead.workspaceId === workspaceId);
+  const rows = await leads.where(
+    (lead) => lead.workspaceId === workspaceId && (!assigneeId || lead.assigneeId === assigneeId),
+  );
   const members = await listMembers(workspaceId);
   const now = Date.now();
   const weekAgo = new Date(now - 7 * 24 * 3600 * 1000).toISOString();

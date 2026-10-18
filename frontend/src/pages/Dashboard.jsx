@@ -16,6 +16,19 @@ import { useToast } from '../context/toastContext.js';
 import { dashboardApi } from '../lib/api.js';
 
 const REFRESH_MS = 15000;
+const HIDE_KEY = 'dashboard.hidden';
+
+/**
+ * Show/hide choices persist per browser, because "I do not care about revenue" is a
+ * preference, not a session. Keys are the tile/section names.
+ */
+function readHidden() {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(HIDE_KEY) ?? '[]'));
+  } catch {
+    return new Set();
+  }
+}
 
 const money = (value) => `$${Number(value ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 
@@ -33,6 +46,19 @@ export default function Dashboard() {
   const { showToast } = useToast();
 
   const [data, setData] = useState(null);
+  const [hidden, setHidden] = useState(readHidden);
+
+  const show = (key) => !hidden.has(key);
+
+  function toggle(key) {
+    const next = new Set(hidden);
+
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+
+    setHidden(next);
+    localStorage.setItem(HIDE_KEY, JSON.stringify([...next]));
+  }
 
   const apply = useCallback((payload) => setData(payload), []);
   const fetchAll = useCallback(() => dashboardApi.get(token), [token]);
@@ -76,8 +102,8 @@ export default function Dashboard() {
         <div>
           <h1>{data.workspace.name}</h1>
           <p>
-            Updated {new Date(data.generatedAt).toLocaleTimeString()} · {subscription.planName} (
-            {subscription.status})
+            {data.scopeLabel} · updated {new Date(data.generatedAt).toLocaleTimeString()} ·{' '}
+            {subscription.planName} ({subscription.status})
           </p>
         </div>
         <Link className="btn btn-secondary btn-sm" to="/subscription">
@@ -86,6 +112,27 @@ export default function Dashboard() {
         </Link>
       </div>
 
+      <details className="google-setup" style={{ marginBottom: '0.75rem' }}>
+        <summary>Choose which figures to show</summary>
+        <div className="btn-row" style={{ flexWrap: 'wrap', gap: '0.6rem', marginTop: '0.4rem' }}>
+          {[
+            ['value', 'Pipeline value'],
+            ['revenue', 'Revenue'],
+            ['team', 'Team availability'],
+            ['leads', 'Latest leads'],
+            ['activity', 'Recent activity'],
+          ].map(([key, label]) => (
+            <label key={key} className="hint" style={{ display: 'inline-flex', gap: '0.3rem' }}>
+              <input type="checkbox" checked={show(key)} onChange={() => toggle(key)} />
+              {label}
+            </label>
+          ))}
+        </div>
+        <p className="hint" style={{ marginBottom: 0 }}>
+          Saved in this browser.
+        </p>
+      </details>
+
       <section className="metric-grid" style={{ marginBottom: '1.25rem' }}>
         <Link className="metric-tile" to="/crm">
           <span className="label-micro">New leads today</span>
@@ -93,15 +140,17 @@ export default function Dashboard() {
           <span className="hint">{leads.weekLeads} this week</span>
         </Link>
 
-        <Link className="metric-tile" to="/crm">
-          <span className="label-micro">Open pipeline value</span>
-          <strong>{data.valueHidden ? 'Restricted' : money(pipeline.openValue)}</strong>
-          <span className="hint">
-            {data.valueHidden
-              ? 'your role cannot see opportunity value'
-              : `${money(pipeline.wonValue)} won to date`}
-          </span>
-        </Link>
+        {show('value') ? (
+          <Link className="metric-tile" to="/crm">
+            <span className="label-micro">Open pipeline value</span>
+            <strong>{data.valueHidden ? 'Restricted' : money(pipeline.openValue)}</strong>
+            <span className="hint">
+              {data.valueHidden
+                ? 'your role cannot see opportunity value'
+                : `${money(pipeline.wonValue)} won to date`}
+            </span>
+          </Link>
+        ) : null}
 
         <article className="metric-tile">
           <span className="label-micro">Avg time to first response</span>
@@ -123,23 +172,41 @@ export default function Dashboard() {
           <span className="hint">{leads.unacknowledged} awaiting acknowledgement</span>
         </article>
 
-        <Link className="metric-tile" to="/subscription">
-          <span className="label-micro">Payments received this month</span>
-          <strong>{data.valueHidden ? 'Restricted' : money(revenue.collectedThisMonth)}</strong>
-          <span className="hint">
-            {data.valueHidden ? 'your role cannot see amounts' : 'collected only, not projected'}
-          </span>
+        <Link className="metric-tile" to="/appointments">
+          <span className="label-micro">Upcoming appointments</span>
+          <strong>{data.appointments?.upcoming?.length ?? 0}</strong>
+          <span className="hint">{data.appointments?.total ?? 0} booked in total</span>
         </Link>
 
-        <article className="metric-tile">
-          <span className="label-micro">Projected revenue</span>
-          <strong>{data.valueHidden ? 'Restricted' : money(revenue.projected)}</strong>
-          <span className="hint">
-            {data.valueHidden
-              ? 'your role cannot see amounts'
-              : `open opportunities plus ${revenue.awaitingPaymentRequests} unpaid request(s)`}
-          </span>
-        </article>
+        {show('revenue') ? (
+          <Link className="metric-tile" to="/subscription">
+            <span className="label-micro">Payments received this month</span>
+            <strong>
+              {data.valueHidden || data.personal ? '—' : money(revenue.collectedThisMonth)}
+            </strong>
+            <span className="hint">
+              {data.personal
+                ? 'a company-wide figure'
+                : data.valueHidden
+                  ? 'your role cannot see amounts'
+                  : 'collected only, not projected'}
+            </span>
+          </Link>
+        ) : null}
+
+        {show('revenue') ? (
+          <article className="metric-tile">
+            <span className="label-micro">Projected revenue</span>
+            <strong>{data.valueHidden || data.personal ? '—' : money(revenue.projected)}</strong>
+            <span className="hint">
+              {data.personal
+                ? 'a company-wide figure'
+                : data.valueHidden
+                  ? 'your role cannot see amounts'
+                  : `open opportunities plus ${revenue.awaitingPaymentRequests} unpaid request(s)`}
+            </span>
+          </article>
+        ) : null}
 
         <article className="metric-tile">
           <span className="label-micro">Conversion</span>
@@ -176,7 +243,7 @@ export default function Dashboard() {
           </div>
         </article>
 
-        <article className="card">
+        <article className="card" style={{ display: show('team') ? undefined : 'none' }}>
           <span className="label-micro">
             <Users size={12} aria-hidden="true" /> Team availability
           </span>
@@ -220,8 +287,27 @@ export default function Dashboard() {
         </article>
       </section>
 
+      {data.appointments?.upcoming?.length ? (
+        <section className="dash-section">
+          <h2 className="dash-section__title">Upcoming appointments</h2>
+          <ul className="voice-log">
+            {data.appointments.upcoming.map((appointment) => (
+              <li className="voice-turn" key={appointment.id}>
+                <Link to="/appointments">
+                  <strong>{new Date(appointment.start).toLocaleString()}</strong>
+                </Link>
+                <span className="hint">
+                  {' '}
+                  · {appointment.title} · {appointment.memberName || '—'}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
       <section className="grid grid-2">
-        <article className="card">
+        <article className="card" style={{ display: show('leads') ? undefined : 'none' }}>
           <span className="label-micro">
             <Activity size={12} aria-hidden="true" /> Latest leads
           </span>
@@ -247,7 +333,7 @@ export default function Dashboard() {
           </ul>
         </article>
 
-        <article className="card">
+        <article className="card" style={{ display: show('activity') ? undefined : 'none' }}>
           <span className="label-micro">
             <Clock size={12} aria-hidden="true" /> Recent activity
           </span>

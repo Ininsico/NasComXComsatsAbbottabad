@@ -7,6 +7,8 @@ import PublicOnlyRoute from './components/PublicOnlyRoute.jsx';
 import ScrollToTop from './components/ScrollToTop.jsx';
 import About from './pages/About.jsx';
 import Admin from './pages/Admin.jsx';
+import Appointments from './pages/Appointments.jsx';
+import Audit from './pages/Audit.jsx';
 import Companies from './pages/Companies.jsx';
 import CompanyDetail from './pages/CompanyDetail.jsx';
 import Contact from './pages/Contact.jsx';
@@ -19,6 +21,7 @@ import Deploy from './pages/Deploy.jsx';
 import Features from './pages/Features.jsx';
 import GoogleAuth from './pages/GoogleAuth.jsx';
 import Home from './pages/Home.jsx';
+import Inbox from './pages/Inbox.jsx';
 import Integrations from './pages/Integrations.jsx';
 import Login from './pages/Login.jsx';
 import NotFound from './pages/NotFound.jsx';
@@ -77,6 +80,9 @@ export default function App() {
           <Route path="contacts" element={<Contacts />} />
           <Route path="contacts/:id" element={<ContactDetail />} />
           <Route path="recovery" element={<Recovery />} />
+          <Route path="inbox" element={<Inbox />} />
+          <Route path="appointments" element={<Appointments />} />
+          <Route path="audit" element={<Audit />} />
           <Route path="subscription" element={<Subscription />} />
           <Route path="integrations" element={<Integrations />} />
           <Route path="settings" element={<WorkspaceSettings />} />
